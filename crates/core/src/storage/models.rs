@@ -95,7 +95,7 @@ pub struct AgentInstance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CliMasterStorage {
+pub struct LoomStorage {
     #[serde(default)]
     pub cli_tools: Vec<CliTool>,
     #[serde(default)]
@@ -118,7 +118,7 @@ pub struct CliMasterStorage {
     pub agent_instances: Vec<AgentInstance>,
 }
 
-impl Default for CliMasterStorage {
+impl Default for LoomStorage {
     fn default() -> Self {
         Self {
             cli_tools: Vec::new(),
@@ -135,6 +135,6 @@ impl Default for CliMasterStorage {
     }
 }
 
-pub type AppConfig = CliMasterStorage;
+pub type AppConfig = LoomStorage;
 
 

@@ -3,7 +3,7 @@ pub mod manager;
 pub mod models;
 
 pub use error::{StorageError, Result};
-pub use models::{CliTool, Category, Template, AppConfig, CliMasterStorage, GlobalEnvVar, Project, AgentInstance};
+pub use models::{CliTool, Category, Template, AppConfig, LoomStorage, GlobalEnvVar, Project, AgentInstance};
 pub use manager::{
     get_cli_tools, import_cli_tool, scan_path_env, scan_directory,
     create_category, get_categories, assign_cli_category, update_cli_env, create_template,

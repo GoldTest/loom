@@ -207,9 +207,9 @@ fn test_project_crud() {
         let current_dir = std::env::current_dir().expect("Failed to get current dir");
         let current_dir_str = current_dir.to_string_lossy().to_string();
         
-        let new_proj = create_project("CliMaster Test".to_string(), current_dir_str.clone())
+        let new_proj = create_project("Loom Test".to_string(), current_dir_str.clone())
             .expect("Failed to create project");
-        assert_eq!(new_proj.name, "CliMaster Test");
+        assert_eq!(new_proj.name, "Loom Test");
         assert_eq!(new_proj.root_path, current_dir);
         
         let projects_list = get_projects().expect("Failed to list projects");

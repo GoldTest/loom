@@ -1,5 +1,5 @@
 use crate::storage::error::{StorageError, Result};
-use crate::storage::models::{AppConfig, CliTool, Category, Template, CliMasterStorage, GlobalEnvVar, Project, AgentInstance};
+use crate::storage::models::{AppConfig, CliTool, Category, Template, LoomStorage, GlobalEnvVar, Project, AgentInstance};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
@@ -173,9 +173,9 @@ impl StorageManager {
         &self.config_path
     }
 
-    pub fn load_or_init(&self) -> std::result::Result<CliMasterStorage, StorageError> {
+    pub fn load_or_init(&self) -> std::result::Result<LoomStorage, StorageError> {
         if !self.config_path.exists() {
-            let default_storage = CliMasterStorage::default();
+            let default_storage = LoomStorage::default();
             self.save(&default_storage)?;
             return Ok(default_storage);
         }
@@ -186,7 +186,7 @@ impl StorageManager {
         Ok(storage)
     }
 
-    pub fn save(&self, storage: &CliMasterStorage) -> std::result::Result<(), StorageError> {
+    pub fn save(&self, storage: &LoomStorage) -> std::result::Result<(), StorageError> {
         let content = serde_json::to_vec_pretty(storage)?;
 
         if let Some(parent) = self.config_path.parent() {

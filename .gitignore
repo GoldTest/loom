@@ -24,7 +24,7 @@ pnpm-debug.log*
 *.sw?
 
 # Local test databases & configurations
-climaster.json
+loom.json
 active_instances.json
 temp_config_*.json
 e2e/temp_config_*.json
