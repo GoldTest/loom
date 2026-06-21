@@ -1,7 +1,7 @@
 // Tauri command wrappers — calls Rust backend via IPC
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { CliTool, Category, Template, GlobalEnvVar, LogEvent, StatusEvent } from './types';
+import type { CliTool, Category, Template, GlobalEnvVar, LogEvent, StatusEvent, Project, AgentInstance } from './types';
 
 // ─── CLI Tools ────────────────────────────────────────────
 export const getCliTools = (): Promise<CliTool[]> =>
@@ -81,9 +81,10 @@ export const createTemplate = (
   env: Record<string, string>,
   envVarIds: string[],
   pwd?: string,
-  cmdOverride?: string
+  cmdOverride?: string,
+  envMode?: 'inherit' | 'isolated'
 ): Promise<Template> =>
-  invoke('create_template', { cliId, name, args, env, envVarIds, pwd, cmdOverride });
+  invoke('create_template', { cliId, name, args, env, envVarIds, pwd, cmdOverride, envMode });
 
 export const updateTemplate = (
   templateId: string,
@@ -92,9 +93,10 @@ export const updateTemplate = (
   env: Record<string, string>,
   envVarIds: string[],
   pwd?: string,
-  cmdOverride?: string
+  cmdOverride?: string,
+  envMode?: 'inherit' | 'isolated'
 ): Promise<Template> =>
-  invoke('update_template', { templateId, name, args, env, envVarIds, pwd, cmdOverride });
+  invoke('update_template', { templateId, name, args, env, envVarIds, pwd, cmdOverride, envMode });
 
 export const deleteTemplate = (templateId: string): Promise<void> =>
   invoke('delete_template', { templateId });
@@ -143,3 +145,37 @@ export const getFontSize = (): Promise<string> =>
 
 export const setFontSize = (size: string): Promise<void> =>
   invoke('set_font_size', { size });
+
+// ─── Projects ─────────────────────────────────────────────
+export const getProjects = (): Promise<Project[]> =>
+  invoke('get_projects');
+
+export const createProject = (name: string, rootPath: string): Promise<Project> =>
+  invoke('create_project', { name, rootPath });
+
+export const deleteProject = (id: string): Promise<void> =>
+  invoke('delete_project', { id });
+
+export const getProjectAgents = (projectId: string): Promise<AgentInstance[]> =>
+  invoke('get_project_agents', { projectId });
+
+export const spawnProjectAgent = (
+  projectId: string,
+  command: string,
+  args: string[],
+  envMode: 'inherit' | 'isolated',
+  customEnvs: Record<string, string>
+): Promise<string> =>
+  invoke('spawn_project_agent', { projectId, command, args, envMode, customEnvs });
+
+export const killAgentProcess = (instanceId: string): Promise<void> =>
+  invoke('kill_agent_process', { instanceId });
+
+export const bringAgentToForeground = (instanceId: string): Promise<boolean> =>
+  invoke('bring_agent_to_foreground', { instanceId });
+
+export const selectDirectory = (): Promise<string | null> =>
+  invoke('select_directory');
+
+export const reorderProjects = (ids: string[]): Promise<void> =>
+  invoke('reorder_projects', { ids });

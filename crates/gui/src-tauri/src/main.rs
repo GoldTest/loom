@@ -7,8 +7,8 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
-use climaster_core::storage::{
-    CliTool, Category, Template, GlobalEnvVar,
+use loom_core::storage::{
+    CliTool, Category, Template, GlobalEnvVar, Project, AgentInstance,
     get_cli_tools as core_get_cli_tools,
     get_categories as core_get_categories,
     import_cli_tool as core_import_cli_tool,
@@ -40,6 +40,14 @@ use climaster_core::storage::{
     set_font_family as core_set_font_family,
     get_font_size as core_get_font_size,
     set_font_size as core_set_font_size,
+    get_projects as core_get_projects,
+    create_project as core_create_project,
+    delete_project as core_delete_project,
+    reorder_projects as core_reorder_projects,
+    get_project_agents as core_get_project_agents,
+    spawn_project_agent as core_spawn_project_agent,
+    sync_running_processes as core_sync_running_processes,
+    get_active_instances_list as core_get_active_instances_list,
 };
 
 #[tauri::command]
@@ -91,8 +99,9 @@ fn create_template(
     env_var_ids: Vec<String>,
     pwd: Option<String>,
     cmd_override: Option<String>,
+    env_mode: Option<String>,
 ) -> Result<Template, String> {
-    core_create_template(cli_id, name, args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())
+    core_create_template(cli_id, name, args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -114,8 +123,9 @@ fn update_template(
     env_var_ids: Vec<String>,
     pwd: Option<String>,
     cmd_override: Option<String>,
+    env_mode: Option<String>,
 ) -> Result<Template, String> {
-    core_update_template(template_id, name, args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())
+    core_update_template(template_id, name, args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -212,6 +222,154 @@ fn set_font_size(size: String) -> Result<(), String> {
     core_set_font_size(size).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_projects() -> Result<Vec<Project>, String> {
+    core_get_projects().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_project(name: String, root_path: String) -> Result<Project, String> {
+    core_create_project(name, root_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_project(id: String) -> Result<(), String> {
+    core_delete_project(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reorder_projects(ids: Vec<String>) -> Result<(), String> {
+    core_reorder_projects(ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_project_agents(project_id: String) -> Result<Vec<AgentInstance>, String> {
+    core_get_project_agents(project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn spawn_project_agent(
+    app_handle: tauri::AppHandle,
+    project_id: String,
+    command: String,
+    args: Vec<String>,
+    env_mode: String,
+    custom_envs: HashMap<String, String>,
+) -> Result<String, String> {
+    use tauri::Emitter;
+    let on_event = std::sync::Arc::new(move |event_name: String, payload: serde_json::Value| {
+        let _ = app_handle.emit(&event_name, payload);
+    });
+    core_spawn_project_agent(project_id, command, args, env_mode, custom_envs, Some(on_event)).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "windows")]
+mod win_util {
+    use std::ffi::c_void;
+
+    struct EnumData {
+        pid: u32,
+        hwnd: Option<*mut c_void>,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetWindowThreadProcessId(hwnd: *mut c_void, lpdwProcessId: *mut u32) -> u32;
+        fn EnumWindows(lpEnumFunc: unsafe extern "system" fn(*mut c_void, isize) -> i32, lParam: isize) -> i32;
+        fn SetForegroundWindow(hwnd: *mut c_void) -> i32;
+        fn ShowWindow(hwnd: *mut c_void, nCmdShow: i32) -> i32;
+        fn IsIconic(hwnd: *mut c_void) -> i32;
+        fn IsWindowVisible(hwnd: *mut c_void) -> i32;
+    }
+
+    #[allow(non_snake_case)]
+    unsafe extern "system" fn enum_windows_callback(hwnd: *mut c_void, lParam: isize) -> i32 {
+        let data = &mut *(lParam as *mut EnumData);
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, &mut process_id);
+        if process_id == data.pid {
+            if data.hwnd.is_none() || IsWindowVisible(hwnd) != 0 {
+                data.hwnd = Some(hwnd);
+            }
+            if IsWindowVisible(hwnd) != 0 {
+                return 0; // stop enumeration
+            }
+        }
+        1 // continue enumeration
+    }
+
+    pub fn bring_pid_to_foreground(pid: u32) -> bool {
+        let mut data = EnumData {
+            pid,
+            hwnd: None,
+        };
+        unsafe {
+            EnumWindows(enum_windows_callback, &mut data as *mut EnumData as isize);
+            if let Some(hwnd) = data.hwnd {
+                if IsIconic(hwnd) != 0 {
+                    ShowWindow(hwnd, 9); // SW_RESTORE = 9
+                }
+                SetForegroundWindow(hwnd);
+                true
+            } else {
+                false
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod win_util {
+    pub fn bring_pid_to_foreground(_pid: u32) -> bool {
+        false
+    }
+}
+
+#[tauri::command]
+fn kill_agent_process(instance_id: String) -> Result<(), String> {
+    core_kill_cli_instance(instance_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn bring_agent_to_foreground(instance_id: String) -> Result<bool, String> {
+    // 1. Try to get pid from in-memory running child handle
+    let pid_opt = {
+        let active = core_get_active_instances().lock().unwrap();
+        if let Some(child_arc) = active.get(&instance_id) {
+            if let Ok(guard) = child_arc.lock() {
+                Some(guard.id())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // 2. If not found in memory, look up the active instances list from JSON
+    let pid = pid_opt.or_else(|| {
+        let list = core_get_active_instances_list();
+        list.iter()
+            .find(|x| x.instance_id == instance_id)
+            .map(|x| x.pid)
+    });
+
+    if let Some(pid) = pid {
+        let success = win_util::bring_pid_to_foreground(pid);
+        Ok(success)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn select_directory() -> Result<Option<String>, String> {
+    let result = rfd::FileDialog::new()
+        .pick_folder()
+        .map(|path| path.to_string_lossy().to_string());
+    Ok(result)
+}
+
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(args_json)
@@ -293,7 +451,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
             let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
-            let res = core_create_template(cli_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())?;
+            let env_mode = args.get("env_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let res = core_create_template(cli_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "get_templates" => {
@@ -334,7 +493,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
             let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
-            let res = core_update_template(template_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override).map_err(|e| e.to_string())?;
+            let env_mode = args.get("env_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let res = core_update_template(template_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_cli_tool" => {
@@ -462,6 +622,69 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             delete_global_env_var(id.to_string())?;
             Ok("null".to_string())
         }
+        "get_projects" => {
+            let res = get_projects()?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "create_project" => {
+            let name = args["name"].as_str()
+                .ok_or_else(|| "Missing argument 'name'".to_string())?;
+            let root_path = args["root_path"].as_str()
+                .ok_or_else(|| "Missing argument 'root_path'".to_string())?;
+            let res = create_project(name.to_string(), root_path.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "delete_project" => {
+            let id = args["id"].as_str()
+                .ok_or_else(|| "Missing argument 'id'".to_string())?;
+            delete_project(id.to_string())?;
+            Ok("null".to_string())
+        }
+        "get_project_agents" => {
+            let project_id = args["project_id"].as_str()
+                .ok_or_else(|| "Missing argument 'project_id'".to_string())?;
+            let res = get_project_agents(project_id.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "spawn_project_agent" => {
+            let project_id = args["project_id"].as_str()
+                .ok_or_else(|| "Missing argument 'project_id'".to_string())?;
+            let command = args["command"].as_str()
+                .ok_or_else(|| "Missing argument 'command'".to_string())?;
+            let args_arr = args["args"].as_array()
+                .ok_or_else(|| "Missing or invalid argument 'args'".to_string())?;
+            let mut cmd_args = Vec::new();
+            for a in args_arr {
+                cmd_args.push(a.as_str().ok_or_else(|| "Arg must be a string".to_string())?.to_string());
+            }
+            let env_mode = args["env_mode"].as_str().unwrap_or("inherit").to_string();
+            let env_obj = args["custom_envs"].as_object();
+            let mut custom_envs = HashMap::new();
+            if let Some(obj) = env_obj {
+                for (k, v) in obj {
+                    let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
+                    custom_envs.insert(k.clone(), v_str.to_string());
+                }
+            }
+            let instance_id = core_spawn_project_agent(project_id.to_string(), command.to_string(), cmd_args, env_mode, custom_envs, None).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!(instance_id).to_string())
+        }
+        "kill_agent_process" => {
+            let instance_id = args["instance_id"].as_str()
+                .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
+            kill_agent_process(instance_id.to_string())?;
+            Ok("null".to_string())
+        }
+        "bring_agent_to_foreground" => {
+            let instance_id = args["instance_id"].as_str()
+                .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
+            let res = bring_agent_to_foreground(instance_id.to_string())?;
+            serde_json::to_string(&res).map_err(|e| e.to_string())
+        }
+        "select_directory" => {
+            let path = args["path"].as_str().map(|s| s.to_string());
+            serde_json::to_string(&path).map_err(|e| e.to_string())
+        }
         _ => Err(format!("Unknown command '{}'", cmd)),
     }
 }
@@ -489,8 +712,9 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
+            let _ = core_sync_running_processes();
             let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
-            let show_item = MenuItemBuilder::with_id("show", "Show CliMaster / 显示主窗口").build(app)?;
+            let show_item = MenuItemBuilder::with_id("show", "Show Loom / 显示主窗口").build(app)?;
             let menu = MenuBuilder::new(app).items(&[&show_item, &quit_item]).build()?;
 
             let _tray = TrayIconBuilder::new()
@@ -566,7 +790,16 @@ fn main() {
             set_font_family,
             get_font_size,
             set_font_size,
-            log_frontend
+            log_frontend,
+            get_projects,
+            create_project,
+            delete_project,
+            reorder_projects,
+            get_project_agents,
+            spawn_project_agent,
+            kill_agent_process,
+            bring_agent_to_foreground,
+            select_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

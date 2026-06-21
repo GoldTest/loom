@@ -48,24 +48,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path target/release/portable
           New-Item -ItemType Directory -Force -Path target/release/portable/cli
           
-          # Copy and rename GUI binary to CliMaster.exe
-          Copy-Item -Path target/release/climaster-gui.exe -Destination target/release/portable/CliMaster.exe
+          # Copy and rename GUI binary to Loom.exe
+          Copy-Item -Path target/release/loom-gui.exe -Destination target/release/portable/Loom.exe
           
-          # Copy CLI binary to cli/climaster.exe
-          Copy-Item -Path target/release/climaster.exe -Destination target/release/portable/cli/climaster.exe
+          # Copy CLI binary to cli/loom.exe
+          Copy-Item -Path target/release/loom.exe -Destination target/release/portable/cli/loom.exe
           
           # Copy README
           Copy-Item -Path README.md -Destination target/release/portable/README.md
           
           # Compress staging directory contents
-          Compress-Archive -Path target/release/portable/* -DestinationPath target/release/CliMaster-portable-x64.zip
+          Compress-Archive -Path target/release/portable/* -DestinationPath target/release/Loom-portable-x64.zip
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/bundle/nsis/*.exe
-            target/release/CliMaster-portable-x64.zip
+            target/release/Loom-portable-x64.zip
           draft: false
           prerelease: false
         env:

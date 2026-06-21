@@ -46,6 +46,8 @@ pub struct Template {
     pub last_run: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cmd_override: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_mode: Option<String>,
 }
 
 pub fn default_language() -> String {
@@ -62,6 +64,34 @@ pub fn default_font_family() -> String {
 
 pub fn default_font_size() -> String {
     "14px".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub root_path: PathBuf,
+    #[serde(default)]
+    pub env_profiles: HashMap<String, HashMap<String, String>>,
+    #[serde(default)]
+    pub quick_commands: Vec<Template>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentInstance {
+    pub id: String,
+    pub project_id: String,
+    pub command: String,
+    pub arguments: Vec<String>,
+    pub status: String, // "running", "success", "failed", "interrupted"
+    pub env_mode: String, // "inherit" or "isolated"
+    #[serde(default)]
+    pub custom_envs: HashMap<String, String>,
+    pub start_time: String,
+    #[serde(default)]
+    pub end_time: Option<String>,
+    #[serde(default)]
+    pub pid: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -82,6 +112,10 @@ pub struct CliMasterStorage {
     pub font_family: String,
     #[serde(default = "default_font_size")]
     pub font_size: String,
+    #[serde(default)]
+    pub projects: Vec<Project>,
+    #[serde(default)]
+    pub agent_instances: Vec<AgentInstance>,
 }
 
 impl Default for CliMasterStorage {
@@ -95,9 +129,12 @@ impl Default for CliMasterStorage {
             theme: default_theme(),
             font_family: default_font_family(),
             font_size: default_font_size(),
+            projects: Vec::new(),
+            agent_instances: Vec::new(),
         }
     }
 }
 
 pub type AppConfig = CliMasterStorage;
+
 

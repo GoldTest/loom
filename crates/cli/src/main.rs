@@ -1,12 +1,12 @@
 use std::env;
 use std::process;
 use std::path::PathBuf;
-use climaster_core::storage::{get_cli_tools, get_templates, get_global_env_vars};
+use loom_core::storage::{get_cli_tools, get_templates, get_global_env_vars};
 
 fn print_help() {
-    println!("climaster - CLI Tool Manager");
+    println!("loom - Multi-Project Management & Distribution");
     println!("Usage:");
-    println!("  climaster [options] <command> [args]");
+    println!("  loom [options] <command> [args]");
     println!();
     println!("Options:");
     println!("  -h, --help      Show this help menu");
@@ -17,11 +17,11 @@ fn print_help() {
     println!("  search <query>  Search for registered CLI tools by query");
     println!();
     println!("You can also run a CLI tool or template directly by its command override:");
-    println!("  climaster <override-name> [extra args...]");
+    println!("  loom <override-name> [extra args...]");
 }
 
 fn print_version() {
-    println!("climaster {}", env!("CARGO_PKG_VERSION"));
+    println!("loom {}", env!("CARGO_PKG_VERSION"));
 }
 
 /// Try to run a command by looking up cmd_override in templates, or name in cli_tools.
@@ -275,7 +275,7 @@ fn main() {
                         process::exit(code);
                     }
                     "--spawn-child" => {
-                        let self_exe = env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("climaster"));
+                        let self_exe = env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("loom"));
                         let mut cmd = process::Command::new(self_exe);
                         cmd.arg("mock-run");
                         for a in &args[i + 1..] {

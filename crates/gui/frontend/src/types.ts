@@ -32,6 +32,7 @@ export interface Template {
   pwd?: string;
   last_run?: string;
   cmd_override?: string;
+  env_mode?: 'inherit' | 'isolated';
 }
 
 export interface ActiveInstance {
@@ -62,4 +63,25 @@ export interface RunningInstance {
   logs: LogEvent[];
   exit_code?: number;
   started_at: Date;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  root_path: string;
+  env_profiles: Record<string, Record<string, string>>;
+  quick_commands: Template[];
+}
+
+export interface AgentInstance {
+  id: string;
+  project_id: string;
+  command: string;
+  arguments: string[];
+  status: 'running' | 'success' | 'failed' | 'interrupted';
+  env_mode: 'inherit' | 'isolated';
+  custom_envs: Record<string, string>;
+  start_time: string;
+  end_time?: string;
+  pid?: number;
 }

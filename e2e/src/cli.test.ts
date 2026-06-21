@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { describe, test, expect, beforeEach, afterAll } from 'vitest';
 
-const CLI_BINARY = path.resolve(__dirname, '../../target/debug/climaster');
+const CLI_BINARY = path.resolve(__dirname, '../../target/debug/loom');
 const CONFIG_PATH = path.resolve(__dirname, '../temp_config_cli.json');
 
 async function runCli(args: string[], env: any = {}) {
@@ -11,7 +11,7 @@ async function runCli(args: string[], env: any = {}) {
   const binPath = `${CLI_BINARY}${ext}`;
   return await execa(binPath, args, {
     env: {
-      CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+      LOOM_CONFIG_PATH: CONFIG_PATH,
       ...env
     },
     reject: false
@@ -22,7 +22,7 @@ function writeMockConfig(data: any) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2));
 }
 
-describe('climaster CLI E2E tests', () => {
+describe('loom CLI E2E tests', () => {
   beforeEach(() => {
     if (fs.existsSync(CONFIG_PATH)) {
       fs.unlinkSync(CONFIG_PATH);
@@ -35,26 +35,26 @@ describe('climaster CLI E2E tests', () => {
     }
   });
 
-  // F5: climaster CLI Tool (5 tests)
+  // F5: loom CLI Tool (5 tests)
   test('test_cli_help_menu', async () => {
     const res = await runCli(['--help']);
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('climaster - CLI Tool Manager');
+    expect(res.stdout).toContain('loom - Multi-Project Management & Distribution');
     expect(res.stdout).toContain('Usage:');
 
     const resShort = await runCli(['-h']);
     expect(resShort.exitCode).toBe(0);
-    expect(resShort.stdout).toContain('climaster - CLI Tool Manager');
+    expect(resShort.stdout).toContain('loom - Multi-Project Management & Distribution');
   });
 
   test('test_cli_version_info', async () => {
     const res = await runCli(['--version']);
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('climaster 0.1.1');
+    expect(res.stdout).toContain('loom 0.1.3');
 
     const resShort = await runCli(['-v']);
     expect(resShort.exitCode).toBe(0);
-    expect(resShort.stdout).toContain('climaster 0.1.1');
+    expect(resShort.stdout).toContain('loom 0.1.3');
   });
 
   test('test_cli_list_default_table', async () => {

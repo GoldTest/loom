@@ -1,5 +1,5 @@
 use crate::storage::error::{StorageError, Result};
-use crate::storage::models::{AppConfig, CliTool, Category, Template, CliMasterStorage, GlobalEnvVar};
+use crate::storage::models::{AppConfig, CliTool, Category, Template, CliMasterStorage, GlobalEnvVar, Project, AgentInstance};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
@@ -81,15 +81,56 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     Ok(())
 }
 
+fn migrate_legacy_config(new_path: &Path) {
+    if new_path.exists() {
+        return;
+    }
+    // Attempt migration from legacy config path 1 (com/CliMaster/CliMaster/climaster.json)
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "CliMaster", "CliMaster") {
+        let legacy_path = proj_dirs.config_dir().join("climaster.json");
+        if legacy_path.exists() {
+            if let Some(parent) = new_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if fs::copy(&legacy_path, new_path).is_ok() {
+                let legacy_instances = legacy_path.with_file_name("active_instances.json");
+                let new_instances = new_path.with_file_name("active_instances.json");
+                if legacy_instances.exists() {
+                    let _ = fs::copy(&legacy_instances, &new_instances);
+                }
+                return;
+            }
+        }
+    }
+    // Attempt migration from legacy config path 2 (com/climaster/CliMaster/climaster.json)
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "climaster", "CliMaster") {
+        let legacy_path = proj_dirs.data_local_dir().join("climaster.json");
+        if legacy_path.exists() {
+            if let Some(parent) = new_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if fs::copy(&legacy_path, new_path).is_ok() {
+                let legacy_instances = legacy_path.with_file_name("active_instances.json");
+                let new_instances = new_path.with_file_name("active_instances.json");
+                if legacy_instances.exists() {
+                    let _ = fs::copy(&legacy_instances, &new_instances);
+                }
+            }
+        }
+    }
+}
+
 pub fn get_config_path() -> PathBuf {
-    if let Ok(p) = env::var("CLIMASTER_CONFIG_PATH") {
+    if let Ok(p) = env::var("LOOM_CONFIG_PATH") {
         PathBuf::from(p)
-    } else if let Some(proj_dirs) = directories::ProjectDirs::from("com", "CliMaster", "CliMaster") {
+    } else if let Some(proj_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
         let config_dir = proj_dirs.config_dir();
         let _ = fs::create_dir_all(config_dir);
-        config_dir.join("climaster.json")
+        let path = config_dir.join("loom.json");
+        migrate_legacy_config(&path);
+        path
     } else {
-        PathBuf::from("climaster.json")
+        PathBuf::from("loom.json")
     }
 }
 
@@ -111,10 +152,13 @@ pub struct StorageManager {
 
 impl StorageManager {
     pub fn new() -> std::result::Result<Self, StorageError> {
-        let path = if let Ok(p) = env::var("CLIMASTER_CONFIG_PATH") {
+        let path = if let Ok(p) = env::var("LOOM_CONFIG_PATH") {
             PathBuf::from(p)
-        } else if let Some(proj_dirs) = directories::ProjectDirs::from("com", "climaster", "CliMaster") {
-            proj_dirs.data_local_dir().join("climaster.json")
+        } else if let Some(proj_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
+            let p = proj_dirs.data_local_dir().join("loom.json");
+            let _ = fs::create_dir_all(proj_dirs.data_local_dir());
+            migrate_legacy_config(&p);
+            p
         } else {
             return Err(StorageError::DirectoryResolutionError);
         };
@@ -481,6 +525,7 @@ pub fn create_template(
     env_var_ids: Vec<String>,
     pwd: Option<String>,
     cmd_override: Option<String>,
+    env_mode: Option<String>,
 ) -> Result<Template> {
     if name.is_empty() {
         return Err(StorageError::Validation("Template name cannot be empty".to_string()));
@@ -525,6 +570,7 @@ pub fn create_template(
         pwd: pwd_path,
         last_run: None,
         cmd_override: normalized_override,
+        env_mode,
     };
 
     config.templates.push(new_template.clone());
@@ -556,6 +602,7 @@ pub fn update_template(
     env_var_ids: Vec<String>,
     pwd: Option<String>,
     cmd_override: Option<String>,
+    env_mode: Option<String>,
 ) -> Result<Template> {
     let mut config = load_config()?;
     let template_idx = config.templates.iter().position(|t| t.id == template_id)
@@ -591,6 +638,7 @@ pub fn update_template(
     config.templates[template_idx].env_var_ids = env_var_ids;
     config.templates[template_idx].pwd = pwd_path;
     config.templates[template_idx].cmd_override = normalized_override;
+    config.templates[template_idx].env_mode = env_mode;
 
     let updated = config.templates[template_idx].clone();
     save_config(&config)?;
@@ -833,6 +881,18 @@ pub fn kill_cli_instance(instance_id: String) -> Result<()> {
         let _ = kill_process_tree(entry.pid);
     }
 
+    if let Ok(mut cfg) = load_config() {
+        if let Some(inst) = cfg.agent_instances.iter_mut().find(|i| i.id == instance_id) {
+            inst.status = "interrupted".to_string();
+            let now_str = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs().to_string())
+                .unwrap_or_default();
+            inst.end_time = Some(now_str);
+            let _ = save_config(&cfg);
+        }
+    }
+
     Ok(())
 }
 
@@ -1047,4 +1107,342 @@ pub fn delete_global_env_var(id: String) -> Result<()> {
     save_config(&config)?;
     Ok(())
 }
+
+pub fn get_projects() -> Result<Vec<Project>> {
+    let config = load_config()?;
+    Ok(config.projects.clone())
+}
+
+pub fn create_project(name: String, root_path: String) -> Result<Project> {
+    let name_trimmed = name.trim().to_string();
+    if name_trimmed.is_empty() {
+        return Err(StorageError::Validation("Project name cannot be empty".to_string()));
+    }
+    let path = PathBuf::from(&root_path);
+    if !path.exists() || !path.is_dir() {
+        return Err(StorageError::Validation(format!("Project root directory does not exist: {}", root_path)));
+    }
+
+    let mut config = load_config()?;
+    let new_project = Project {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: name_trimmed,
+        root_path: path,
+        env_profiles: HashMap::new(),
+        quick_commands: Vec::new(),
+    };
+    config.projects.push(new_project.clone());
+    save_config(&config)?;
+    Ok(new_project)
+}
+
+pub fn delete_project(id: String) -> Result<()> {
+    let mut config = load_config()?;
+    let initial_len = config.projects.len();
+    config.projects.retain(|p| p.id != id);
+    if config.projects.len() == initial_len {
+        return Err(StorageError::Validation(format!("Project not found")));
+    }
+    config.agent_instances.retain(|ai| ai.project_id != id);
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn reorder_projects(ids: Vec<String>) -> Result<()> {
+    let mut config = load_config()?;
+    let mut reordered = Vec::with_capacity(config.projects.len());
+    
+    // First, add matching projects in the requested order
+    for id in &ids {
+        if let Some(pos) = config.projects.iter().position(|p| &p.id == id) {
+            reordered.push(config.projects.remove(pos));
+        }
+    }
+    
+    // Add any remaining projects that were not in the ids list (to prevent data loss)
+    reordered.append(&mut config.projects);
+    
+    config.projects = reordered;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_project_agents(project_id: String) -> Result<Vec<AgentInstance>> {
+    let config = load_config()?;
+    let filtered = config.agent_instances.iter()
+        .filter(|ai| ai.project_id == project_id)
+        .cloned()
+        .collect();
+    Ok(filtered)
+}
+
+pub fn spawn_project_agent(
+    project_id: String,
+    command: String,
+    args: Vec<String>,
+    env_mode: String,
+    custom_envs: HashMap<String, String>,
+    on_event: Option<Arc<dyn Fn(String, serde_json::Value) + Send + Sync + 'static>>,
+) -> Result<String> {
+    let config = load_config()?;
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    let executable_path = if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+        tool.path.clone()
+    } else {
+        PathBuf::from(&command)
+    };
+
+    let mut cmd = Command::new(&executable_path);
+    cmd.args(&args);
+    cmd.current_dir(&project.root_path);
+
+    if env_mode == "isolated" {
+        cmd.env_clear();
+        let preserves = [
+            "SystemRoot", "SystemDrive", "PATHEXT", "TEMP", "TMP", 
+            "COMSPEC", "USERNAME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", 
+            "PROGRAMFILES", "PROGRAMFILES(X86)", "COMMONPROGRAMFILES", "PATH"
+        ];
+        for var in &preserves {
+            if let Ok(val) = env::var(var) {
+                cmd.env(var, val);
+            }
+        }
+    }
+
+    for (k, v) in &custom_envs {
+        cmd.env(k, v);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP
+    }
+
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let child = cmd.spawn()?;
+    let instance_id = Uuid::new_v4().to_string();
+    let pid = child.id();
+    let start_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
+
+    let new_instance = AgentInstance {
+        id: instance_id.clone(),
+        project_id: project_id.clone(),
+        command: command.clone(),
+        arguments: args.clone(),
+        status: "running".to_string(),
+        env_mode: env_mode.clone(),
+        custom_envs: custom_envs.clone(),
+        start_time,
+        end_time: None,
+        pid: Some(pid),
+    };
+
+    let mut config_mut = load_config()?;
+    config_mut.agent_instances.push(new_instance);
+    save_config(&config_mut)?;
+
+    let mut list = get_active_instances_list();
+    list.push(ActiveInstance {
+        instance_id: instance_id.clone(),
+        pid,
+        template_id: "".to_string(),
+    });
+    save_active_instances_list(&list);
+
+    let payload = serde_json::json!({
+        "instance_id": instance_id,
+        "status": "running",
+        "exit_code": null
+    });
+    if let Some(ref cb) = on_event {
+        cb("cli-status-event".to_string(), payload.clone());
+    }
+
+    let child_arc = Arc::new(Mutex::new(child));
+    get_active_instances().lock().unwrap().insert(instance_id.clone(), child_arc.clone());
+
+    let instance_id_clone = instance_id.clone();
+    let child_arc_stdout = child_arc.clone();
+    let on_event_stdout = on_event.clone();
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        let mut stdout_opt = None;
+        if let Ok(mut guard) = child_arc_stdout.lock() {
+            stdout_opt = guard.stdout.take();
+        }
+        if let Some(stdout) = stdout_opt {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    let log_payload = serde_json::json!({
+                        "instance_id": instance_id_clone,
+                        "stream": "stdout",
+                        "chunk": l
+                    });
+                    if let Some(ref cb) = on_event_stdout {
+                        cb("cli-log-event".to_string(), log_payload.clone());
+                    }
+                }
+            }
+        }
+    });
+
+    let instance_id_clone_err = instance_id.clone();
+    let child_arc_stderr = child_arc.clone();
+    let on_event_stderr = on_event.clone();
+    std::thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        let mut stderr_opt = None;
+        if let Ok(mut guard) = child_arc_stderr.lock() {
+            stderr_opt = guard.stderr.take();
+        }
+        if let Some(stderr) = stderr_opt {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    let log_payload = serde_json::json!({
+                        "instance_id": instance_id_clone_err,
+                        "stream": "stderr",
+                        "chunk": l
+                    });
+                    if let Some(ref cb) = on_event_stderr {
+                        cb("cli-log-event".to_string(), log_payload.clone());
+                    }
+                }
+            }
+        }
+    });
+
+    let instance_id_clone_mon = instance_id.clone();
+    let on_event_mon = on_event.clone();
+    std::thread::spawn(move || {
+        let status_res = {
+            let mut active = true;
+            let mut exit_status = None;
+            while active {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                if let Ok(mut guard) = child_arc.lock() {
+                    match guard.try_wait() {
+                        Ok(Some(status)) => {
+                            active = false;
+                            exit_status = Some(status);
+                        }
+                        Ok(None) => {}
+                        Err(_) => {
+                            active = false;
+                        }
+                    }
+                } else {
+                    active = false;
+                }
+            }
+            exit_status
+        };
+
+        let exit_code = status_res.and_then(|s| s.code());
+        let status_str = if let Some(code) = exit_code {
+            if code == 0 { "success" } else { "failed" }
+        } else {
+            "failed"
+        };
+
+        let status_payload = serde_json::json!({
+            "instance_id": instance_id_clone_mon,
+            "status": status_str,
+            "exit_code": exit_code
+        });
+        if let Some(ref cb) = on_event_mon {
+            cb("cli-status-event".to_string(), status_payload.clone());
+        }
+
+        get_active_instances().lock().unwrap().remove(&instance_id_clone_mon);
+
+        let mut list = get_active_instances_list();
+        list.retain(|x| x.instance_id != instance_id_clone_mon);
+        save_active_instances_list(&list);
+
+        if let Ok(mut cfg) = load_config() {
+            if let Some(inst) = cfg.agent_instances.iter_mut().find(|i| i.id == instance_id_clone_mon) {
+                inst.status = status_str.to_string();
+                let now_str = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs().to_string())
+                    .unwrap_or_default();
+                inst.end_time = Some(now_str);
+                let _ = save_config(&cfg);
+            }
+        }
+    });
+
+    Ok(instance_id)
+}
+
+pub fn sync_running_processes() -> Result<()> {
+    let mut config = load_config()?;
+    let mut modified = false;
+
+    for inst in &mut config.agent_instances {
+        if inst.status == "running" {
+            let is_alive = if let Some(pid) = inst.pid {
+                #[cfg(target_os = "windows")]
+                {
+                    let mut cmd = Command::new("tasklist");
+                    cmd.args(&["/FI", &format!("PID eq {}", pid)]);
+                    cmd.stdout(Stdio::piped());
+                    cmd.stderr(Stdio::null());
+                    if let Ok(child) = cmd.spawn() {
+                        if let Ok(output) = child.wait_with_output() {
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            stdout.contains(&pid.to_string())
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let mut cmd = Command::new("kill");
+                    cmd.args(&["-0", &pid.to_string()]);
+                    cmd.stdout(Stdio::null());
+                    cmd.stderr(Stdio::null());
+                    if let Ok(mut child) = cmd.spawn() {
+                        child.wait().map(|s| s.success()).unwrap_or(false)
+                    } else {
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            if !is_alive {
+                inst.status = "interrupted".to_string();
+                let now_str = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs().to_string())
+                    .unwrap_or_default();
+                inst.end_time = Some(now_str);
+                modified = true;
+            }
+        }
+    }
+
+    if modified {
+        save_config(&config)?;
+    }
+    Ok(())
+}
+
 

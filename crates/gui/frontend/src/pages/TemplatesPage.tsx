@@ -16,7 +16,7 @@ interface Props {
   onInstanceLaunched: (instanceId: string, template: Template, tool: CliTool) => void;
 }
 
-function TemplateModal({
+export function TemplateModal({
   tools, template, onClose, onSave,
 }: {
   tools: CliTool[];
@@ -25,11 +25,13 @@ function TemplateModal({
   onSave: () => void;
 }) {
   const { t } = useI18n();
+  const [activeTab, setActiveTab] = useState<'general' | 'args' | 'env'>('general');
   const [cliId, setCliId] = useState(template?.cli_id ?? (tools[0]?.id ?? ''));
   const [name, setName] = useState(template?.name ?? '');
   const [argsStr, setArgsStr] = useState(template?.args.join(' ') ?? '');
   const [pwd, setPwd] = useState(template?.pwd ?? '');
   const [cmdOverride, setCmdOverride] = useState(template?.cmd_override ?? '');
+  const [envMode, setEnvMode] = useState<'inherit' | 'isolated'>(template?.env_mode ?? 'inherit');
   const [globalVars, setGlobalVars] = useState<GlobalEnvVar[]>([]);
   const [selectedGlobalVarIds, setSelectedGlobalVarIds] = useState<string[]>(template?.env_var_ids ?? []);
   const [envPairs, setEnvPairs] = useState<{ k: string; v: string }[]>(
@@ -59,118 +61,229 @@ function TemplateModal({
       }
       const overrideVal = cmdOverride.trim() || undefined;
       if (template) {
-        await updateTemplate(template.id, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal);
+        await updateTemplate(template.id, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal, envMode);
       } else {
-        await createTemplate(cliId, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal);
+        await createTemplate(cliId, name.trim(), args, env, selectedGlobalVarIds, pwd.trim() || undefined, overrideVal, envMode);
       }
       onSave();
       onClose();
       toast.success(template ? t('temp.toast.updated') : t('temp.toast.created'));
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('temp.toast.createFailed'));
+    } catch (e) {
+      toast.error(String(e) ?? t('temp.toast.createFailed'));
     } finally {
       setSaving(false);
     }
   };
 
+  // Generate real-time execution preview
+  const getPreviewText = () => {
+    const selectedToolObj = tools.find(t => t.id === cliId);
+    const exeName = selectedToolObj ? selectedToolObj.name : 'cli-tool';
+    const finalArgs = argsStr.trim() ? ` ${argsStr.trim()}` : '';
+    
+    // Gather environments (both custom and active global env vars)
+    const activeGlobalVars = globalVars.filter(gv => selectedGlobalVarIds.includes(gv.id));
+    const activeEnvs: string[] = [];
+    
+    activeGlobalVars.forEach(gv => {
+      activeEnvs.push(`${gv.key}=${gv.value}`);
+    });
+    
+    envPairs.forEach(pair => {
+      if (pair.k.trim()) {
+        activeEnvs.push(`${pair.k.trim()}=${pair.v}`);
+      }
+    });
+    
+    const envPrefix = activeEnvs.length > 0 ? `${activeEnvs.join(' ')} ` : '';
+    const pwdPrefix = pwd.trim() ? `cd ${pwd.trim()} && ` : '';
+    
+    return `${pwdPrefix}${envPrefix}${exeName}${finalArgs}`;
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{template ? t('temp.modal.editTitle') : t('temp.modal.newTitle')}</div>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
+        
+        {/* Navigation Tabs */}
+        <div className="spec-tabs-header">
+          <button
+            type="button"
+            className={`spec-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
+            onClick={() => setActiveTab('general')}
+          >
+            <span>📝</span> {t('temp.modal.general') || '基本设置'}
+          </button>
+          <button
+            type="button"
+            className={`spec-tab-btn ${activeTab === 'args' ? 'active' : ''}`}
+            onClick={() => setActiveTab('args')}
+          >
+            <span>⚙️</span> {t('temp.modal.argsTab') || '参数 & 目录'}
+          </button>
+          <button
+            type="button"
+            className={`spec-tab-btn ${activeTab === 'env' ? 'active' : ''}`}
+            onClick={() => setActiveTab('env')}
+          >
+            <span>🌐</span> {t('temp.modal.envTab') || '环境变量'}
+          </button>
+        </div>
+
         <div className="modal-body">
-          <div className="form-group">
-            <label className="form-label">{t('temp.modal.tool')} *</label>
-            <select className="input" value={cliId} onChange={e => setCliId(e.target.value)} disabled={!!template}>
-              {tools.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">{t('temp.modal.name')} *</label>
-            <input className="input" placeholder={t('temp.modal.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} autoFocus />
-          </div>
-          <div className="form-group">
-            <label className="form-label">{t('temp.card.args')}</label>
-            <input className="input" placeholder={t('temp.modal.argsPlaceholder')} value={argsStr} onChange={e => setArgsStr(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">{t('temp.modal.pwd')}</label>
-            <input className="input" placeholder={t('temp.modal.pwdPlaceholder')} value={pwd} onChange={e => setPwd(e.target.value)} />
-          </div>
-
-          {/* Command Override */}
-          <div className="form-group">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {t('temp.modal.cmdOverride')}
-              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 400, fontFamily: 'monospace' }}>climaster &lt;name&gt;</span>
-            </label>
-            <input
-              className="input"
-              placeholder={t('temp.modal.cmdOverridePlaceholder')}
-              value={cmdOverride}
-              onChange={e => setCmdOverride(e.target.value)}
-              style={{ fontFamily: 'monospace', fontSize: 12 }}
-            />
-          </div>
-
-          {/* Global Env vars checklist */}
-          <div className="form-group">
-            <label className="form-label" style={{ marginBottom: 4 }}>
-              {t('temp.modal.globalEnvs')}
-            </label>
-            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
-              {t('temp.modal.globalEnvsDesc')}
-            </div>
-            {globalVars.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--bg-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)' }}>
-                {t('temp.modal.noGlobalEnvs')}
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', background: 'var(--bg-elevated)', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', maxHeight: '150px', overflowY: 'auto' }}>
-                {globalVars.map(gv => {
-                  const checked = selectedGlobalVarIds.includes(gv.id);
-                  return (
-                    <label key={gv.id} className="flex items-center gap-2" style={{ cursor: 'pointer', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${gv.key}=${gv.value} (${gv.description || ''})`}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          if (checked) {
-                            setSelectedGlobalVarIds(p => p.filter(id => id !== gv.id));
-                          } else {
-                            setSelectedGlobalVarIds(p => [...p, gv.id]);
-                          }
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: checked ? 'var(--accent-purple)' : 'var(--text-secondary)' }}>
-                        {gv.key}
-                      </span>
+          {/* Double-Bezel nested container holding form fields */}
+          <div className="spec-bezel-outer">
+            <div className="spec-bezel-inner">
+              {activeTab === 'general' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">{t('temp.modal.tool')} *</label>
+                    <select className="input" value={cliId} onChange={e => setCliId(e.target.value)} disabled={!!template}>
+                      {tools.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">{t('temp.modal.name')} *</label>
+                    <input className="input" placeholder={t('temp.modal.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} autoFocus />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {t('temp.modal.cmdOverride')}
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 400, fontFamily: 'monospace' }}>loom &lt;name&gt;</span>
                     </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    <input
+                      className="input"
+                      placeholder={t('temp.modal.cmdOverridePlaceholder')}
+                      value={cmdOverride}
+                      onChange={e => setCmdOverride(e.target.value)}
+                      style={{ fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                  </div>
+                </>
+              )}
 
-          {/* Env vars */}
-          <div className="form-group">
-            <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-              <label className="form-label" style={{ margin: 0 }}>{t('temp.card.envs')}</label>
-              <button className="btn btn-ghost" onClick={addEnv} style={{ fontSize: 11, padding: '4px 10px' }}>＋ {t('temp.modal.btn.addVar')}</button>
+              {activeTab === 'args' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">{t('temp.card.args')}</label>
+                    <input className="input" placeholder={t('temp.modal.argsPlaceholder')} value={argsStr} onChange={e => setArgsStr(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">{t('temp.modal.pwd')}</label>
+                    <input className="input" placeholder={t('temp.modal.pwdPlaceholder')} value={pwd} onChange={e => setPwd(e.target.value)} />
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'env' && (
+                <>
+                  {/* Environment Isolation Mode selection */}
+                  <div className="form-group">
+                    <label className="form-label">{t('proj.launcher.envMode') || 'Environment Mode'}</label>
+                    <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', marginTop: '4px', marginBottom: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                        <input 
+                          type="radio" 
+                          name="tplEnvMode" 
+                          value="inherit" 
+                          checked={envMode === 'inherit'}
+                          onChange={() => setEnvMode('inherit')}
+                        />
+                        <span>{t('proj.launcher.envMode.inherit') || 'Inherit'}</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                        <input 
+                          type="radio" 
+                          name="tplEnvMode" 
+                          value="isolated" 
+                          checked={envMode === 'isolated'}
+                          onChange={() => setEnvMode('isolated')}
+                        />
+                        <span>{t('proj.launcher.envMode.isolated') || 'Isolated'}</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Global Env vars Checklist */}
+                  <div className="form-group">
+                    <label className="form-label" style={{ marginBottom: 4 }}>
+                      {t('temp.modal.globalEnvs')}
+                    </label>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                      {t('temp.modal.globalEnvsDesc')}
+                    </div>
+                    {globalVars.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--bg-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)' }}>
+                        {t('temp.modal.noGlobalEnvs')}
+                      </div>
+                    ) : (
+                      <div className="env-chip-grid">
+                        {globalVars.map(gv => {
+                          const checked = selectedGlobalVarIds.includes(gv.id);
+                          return (
+                            <div
+                              key={gv.id}
+                              className={`env-chip ${checked ? 'active' : ''}`}
+                              onClick={() => {
+                                if (checked) {
+                                  setSelectedGlobalVarIds(p => p.filter(id => id !== gv.id));
+                                } else {
+                                  setSelectedGlobalVarIds(p => [...p, gv.id]);
+                                }
+                              }}
+                              title={`${gv.key}=${gv.value} (${gv.description || ''})`}
+                            >
+                              <span className="env-chip-check">✓</span>
+                              <span>{gv.key}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Custom Env vars key-values overrides */}
+                  <div className="form-group">
+                    <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                      <label className="form-label" style={{ margin: 0 }}>{t('temp.card.envs')}</label>
+                      <button type="button" className="btn btn-ghost" onClick={addEnv} style={{ fontSize: 11, padding: '4px 10px' }}>＋ {t('temp.modal.btn.addVar')}</button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '120px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {envPairs.map((pair, i) => (
+                        <div key={i} className="form-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input className="input" placeholder="KEY" value={pair.k} onChange={e => updateEnv(i, 'k', e.target.value)} style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }} />
+                          <span style={{ color: 'var(--text-tertiary)', fontSize: 14, flexShrink: 0 }}>=</span>
+                          <input className="input" placeholder="value" value={pair.v} onChange={e => updateEnv(i, 'v', e.target.value)} style={{ flex: 1.5, fontFamily: 'monospace', fontSize: 12 }} />
+                          <button type="button" className="btn-icon" onClick={() => removeEnv(i)} style={{ color: 'var(--accent-red)', flexShrink: 0, border: 'none', background: 'transparent' }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-            {envPairs.map((pair, i) => (
-              <div key={i} className="form-row" style={{ marginBottom: 6 }}>
-                <input className="input" placeholder="KEY" value={pair.k} onChange={e => updateEnv(i, 'k', e.target.value)} style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }} />
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 14, flexShrink: 0 }}>=</span>
-                <input className="input" placeholder="value" value={pair.v} onChange={e => updateEnv(i, 'v', e.target.value)} style={{ flex: 2, fontFamily: 'monospace', fontSize: 12 }} />
-                <button className="btn-icon" onClick={() => removeEnv(i)} style={{ color: 'var(--accent-red)', flexShrink: 0 }}>✕</button>
+          </div>
+          
+          {/* Live Execution Preview Terminal */}
+          <div style={{ marginTop: '4px' }}>
+            <div className="spec-preview-terminal">
+              <div className="spec-preview-terminal-header">
+                <div className="spec-terminal-dot red" />
+                <div className="spec-terminal-dot yellow" />
+                <div className="spec-terminal-dot green" />
+                <div className="spec-preview-terminal-title">{t('temp.modal.preview') || 'Execution Preview'}</div>
               </div>
-            ))}
+              <div className="spec-preview-cmd-line">
+                {getPreviewText()}
+              </div>
+            </div>
           </div>
         </div>
+
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>{t('cat.modal.btn.cancel')}</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
@@ -194,11 +307,16 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
     try { setTemplates(await getTemplates()); } catch { toast.error(t('temp.toast.launchFailed')); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      load();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(t('temp.confirm.delete', { name }))) return;
-    try { await deleteTemplate(id); load(); toast.success(t('temp.toast.deleted')); } catch (e: any) { toast.error(e?.toString() ?? t('cat.toast.deleteFailed')); }
+    try { await deleteTemplate(id); load(); toast.success(t('temp.toast.deleted')); } catch (e) { toast.error(String(e) ?? t('cat.toast.deleteFailed')); }
   };
 
   const handleRun = async (tpl: Template) => {
@@ -209,8 +327,8 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
       const instanceId = await runCliTemplate(tpl.id);
       onInstanceLaunched(instanceId, tpl, tool);
       toast.success(t('temp.toast.launched') + ': ' + tpl.name);
-    } catch (e: any) {
-      toast.error(e?.toString() ?? t('temp.toast.launchFailed'));
+    } catch (e) {
+      toast.error(String(e) ?? t('temp.toast.launchFailed'));
     } finally {
       setLaunching(null);
     }
@@ -272,7 +390,7 @@ export default function TemplatesPage({ tools, onInstanceLaunched }: Props) {
                     {tpl.cmd_override && (
                       <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
                         <span style={{ color: 'var(--accent-purple)', marginRight: 4 }}>{t('temp.card.cmdOverride')}:</span>
-                        climaster {tpl.cmd_override}
+                        loom {tpl.cmd_override}
                       </span>
                     )}
                     {tpl.args.length > 0 && (

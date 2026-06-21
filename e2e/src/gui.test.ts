@@ -3,8 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { describe, test, expect, beforeEach, afterAll } from 'vitest';
 
-const GUI_BINARY = path.resolve(__dirname, '../../target/debug/climaster-gui');
-const CLI_BINARY = path.resolve(__dirname, '../../target/debug/climaster');
+const GUI_BINARY = path.resolve(__dirname, '../../target/debug/loom-gui');
+const CLI_BINARY = path.resolve(__dirname, '../../target/debug/loom');
 const CONFIG_PATH = path.resolve(__dirname, '../temp_config_gui.json');
 const ACTIVE_INSTANCES_PATH = path.resolve(__dirname, '../active_instances.json');
 
@@ -15,7 +15,7 @@ async function callCmd(cmd: string, args: any = {}, envOverrides: any = {}) {
     env: {
       TAURI_TEST_CMD: cmd,
       TAURI_TEST_ARGS: JSON.stringify(args),
-      CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+      LOOM_CONFIG_PATH: CONFIG_PATH,
       ...envOverrides
     }
   });
@@ -46,7 +46,7 @@ function cleanState() {
 const ext = process.platform === 'win32' ? '.exe' : '';
 const MOCK_CLI_PATH = `${CLI_BINARY}${ext}`;
 
-describe('climaster GUI Tauri Commands E2E tests', () => {
+describe('loom GUI Tauri Commands E2E tests', () => {
   beforeEach(() => {
     cleanState();
   });
@@ -313,7 +313,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -353,7 +353,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -379,7 +379,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -405,7 +405,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -450,7 +450,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -786,7 +786,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -813,7 +813,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -1022,7 +1022,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -1068,7 +1068,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
   });
 
   test('test_cross_cli_query_after_gui_modifications', async () => {
-    // Make edits in GUI, verify climaster list --json reflects it
+    // Make edits in GUI, verify loom list --json reflects it
     writeMockConfig({
       cli_tools: [
         { id: 'cli-1', name: 'git', path: MOCK_CLI_PATH, version: '2.40.0', category_id: null, custom_env: {} }
@@ -1086,7 +1086,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
     const binPath = `${CLI_BINARY}${ext}`;
     const res = await execa(binPath, ['list', '--json'], {
       env: {
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH
+        LOOM_CONFIG_PATH: CONFIG_PATH
       }
     });
 
@@ -1118,7 +1118,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       await callCmd('assign_cli_category', { cli_id: gitTool.id, cat_id: cat.id });
 
       // 4. Set env GIT_AUTHOR_NAME
-      await callCmd('update_cli_env', { cli_id: gitTool.id, env: { GIT_AUTHOR_NAME: 'CliMaster User' } });
+      await callCmd('update_cli_env', { cli_id: gitTool.id, env: { GIT_AUTHOR_NAME: 'Loom User' } });
 
       // 5. Create template "Git Log"
       const temp = await callCmd('create_template', {
@@ -1135,7 +1135,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
         env: {
           TAURI_TEST_CMD: 'run_cli_template',
           TAURI_TEST_ARGS: JSON.stringify({ template_id: temp.id }),
-          CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+          LOOM_CONFIG_PATH: CONFIG_PATH,
         }
       });
       expect(runProcess.stdout).toContain('commit 42d8a5');
@@ -1171,7 +1171,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
         env: {
           TAURI_TEST_CMD: 'run_cli_template',
           TAURI_TEST_ARGS: JSON.stringify({ template_id: temp.id }),
-          CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+          LOOM_CONFIG_PATH: CONFIG_PATH,
         }
       });
 
@@ -1222,7 +1222,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
     expect(runProcess.stdout).toContain('8080');
@@ -1242,7 +1242,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
     expect(runProcess2.stdout).toContain('9090');
@@ -1266,7 +1266,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       env: {
         TAURI_TEST_CMD: 'run_cli_template',
         TAURI_TEST_ARGS: JSON.stringify({ template_id: 't-1' }),
-        CLIMASTER_CONFIG_PATH: CONFIG_PATH,
+        LOOM_CONFIG_PATH: CONFIG_PATH,
       }
     });
 
@@ -1328,7 +1328,7 @@ describe('climaster GUI Tauri Commands E2E tests', () => {
       const cliBin = `${CLI_BINARY}${ext}`;
       const res = await execa(cliBin, ['list', '--json'], {
         env: {
-          CLIMASTER_CONFIG_PATH: CONFIG_PATH
+          LOOM_CONFIG_PATH: CONFIG_PATH
         }
       });
       const parsed = JSON.parse(res.stdout);

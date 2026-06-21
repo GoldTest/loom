@@ -1,13 +1,13 @@
 [package]
-name = "climaster-cli"
+name = "loom-cli"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "climaster"
+name = "loom"
 path = "src/main.rs"
 
 [dependencies]
-climaster-core = { path = "../core" }
+loom-core = { path = "../core" }
 serde = { workspace = true }
 serde_json = { workspace = true }

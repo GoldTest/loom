@@ -16,15 +16,15 @@ where
     let _lock = TEST_MUTEX.lock().unwrap();
     
     let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
-    let temp_config_path = temp_dir.path().join("climaster.json");
+    let temp_config_path = temp_dir.path().join("loom.json");
     
-    std::env::set_var("CLIMASTER_CONFIG_PATH", &temp_config_path);
+    std::env::set_var("LOOM_CONFIG_PATH", &temp_config_path);
     
     // Run the test
     f(&temp_config_path);
     
     // Clean up
-    std::env::remove_var("CLIMASTER_CONFIG_PATH");
+    std::env::remove_var("LOOM_CONFIG_PATH");
 }
 
 #[test]
@@ -61,6 +61,7 @@ fn test_serialization_fidelity() {
         pwd: Some(PathBuf::from("/projects/my-app")),
         last_run: Some("1687258210".to_string()),
         cmd_override: None,
+        env_mode: None,
     };
 
     let original = AppConfig {
@@ -72,6 +73,8 @@ fn test_serialization_fidelity() {
         theme: "dark".to_string(),
         font_family: "Plus Jakarta Sans".to_string(),
         font_size: "14px".to_string(),
+        projects: Vec::new(),
+        agent_instances: Vec::new(),
     };
 
     // Serialize
@@ -190,6 +193,73 @@ fn test_get_set_theme() {
         set_theme("day".to_string()).expect("Failed to set theme");
         let updated_theme = get_theme().expect("Failed to get updated theme");
         assert_eq!(updated_theme, "day");
+    });
+}
+
+#[test]
+fn test_project_crud() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_projects, create_project, delete_project, get_project_agents};
+        
+        let initial_projects = get_projects().expect("Failed to get initial projects");
+        assert_eq!(initial_projects.len(), 0);
+        
+        let current_dir = std::env::current_dir().expect("Failed to get current dir");
+        let current_dir_str = current_dir.to_string_lossy().to_string();
+        
+        let new_proj = create_project("CliMaster Test".to_string(), current_dir_str.clone())
+            .expect("Failed to create project");
+        assert_eq!(new_proj.name, "CliMaster Test");
+        assert_eq!(new_proj.root_path, current_dir);
+        
+        let projects_list = get_projects().expect("Failed to list projects");
+        assert_eq!(projects_list.len(), 1);
+        assert_eq!(projects_list[0].id, new_proj.id);
+        
+        let agents = get_project_agents(new_proj.id.clone()).expect("Failed to get agents");
+        assert_eq!(agents.len(), 0);
+        
+        delete_project(new_proj.id.clone()).expect("Failed to delete project");
+        let final_projects = get_projects().expect("Failed to list final projects");
+        assert_eq!(final_projects.len(), 0);
+    });
+}
+
+#[test]
+fn test_project_reorder() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_projects, create_project, reorder_projects};
+        
+        let current_dir = std::env::current_dir().expect("Failed to get current dir");
+        let current_dir_str = current_dir.to_string_lossy().to_string();
+        
+        let p1 = create_project("Proj 1".to_string(), current_dir_str.clone()).unwrap();
+        let p2 = create_project("Proj 2".to_string(), current_dir_str.clone()).unwrap();
+        let p3 = create_project("Proj 3".to_string(), current_dir_str.clone()).unwrap();
+        
+        let list = get_projects().unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].id, p1.id);
+        assert_eq!(list[1].id, p2.id);
+        assert_eq!(list[2].id, p3.id);
+        
+        // Reorder to: p2, p3, p1
+        reorder_projects(vec![p2.id.clone(), p3.id.clone(), p1.id.clone()]).unwrap();
+        
+        let reordered_list = get_projects().unwrap();
+        assert_eq!(reordered_list.len(), 3);
+        assert_eq!(reordered_list[0].id, p2.id);
+        assert_eq!(reordered_list[1].id, p3.id);
+        assert_eq!(reordered_list[2].id, p1.id);
+        
+        // Reorder with a subset, ensuring the omitted one (p3) is appended to the end
+        reorder_projects(vec![p1.id.clone(), p2.id.clone()]).unwrap();
+        
+        let final_list = get_projects().unwrap();
+        assert_eq!(final_list.len(), 3);
+        assert_eq!(final_list[0].id, p1.id);
+        assert_eq!(final_list[1].id, p2.id);
+        assert_eq!(final_list[2].id, p3.id);
     });
 }
 

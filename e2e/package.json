@@ -1,7 +1,7 @@
 {
-  "name": "climaster-e2e",
+  "name": "loom-e2e",
   "version": "0.1.1",
-  "description": "E2E tests for CliMaster",
+  "description": "E2E tests for Loom",
   "scripts": {
     "test": "vitest run"
   },
