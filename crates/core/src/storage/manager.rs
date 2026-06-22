@@ -179,32 +179,49 @@ pub fn spawn_in_new_terminal(
 ) -> std::io::Result<Child> {
     #[cfg(target_os = "windows")]
     {
-        // Detect shell
+        // Detect shell once and cache it to avoid blocking the main UI thread in release mode.
+        #[derive(Copy, Clone, Debug)]
+        enum TargetShell {
+            Pwsh,
+            PowerShell,
+            Cmd,
+        }
+
+        static DETECTED_SHELL: OnceLock<TargetShell> = OnceLock::new();
+        let shell = *DETECTED_SHELL.get_or_init(|| {
+            if Command::new("pwsh")
+                .arg("-NoProfile")
+                .arg("-Command")
+                .arg("exit")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+            {
+                TargetShell::Pwsh
+            } else if Command::new("powershell")
+                .arg("-NoProfile")
+                .arg("-Command")
+                .arg("exit")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok()
+            {
+                TargetShell::PowerShell
+            } else {
+                TargetShell::Cmd
+            }
+        });
+
         let mut use_pwsh = false;
         let mut use_powershell = false;
-
-        if Command::new("pwsh")
-            .arg("-NoProfile")
-            .arg("-Command")
-            .arg("exit")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
-        {
-            use_pwsh = true;
-        } else if Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-Command")
-            .arg("exit")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
-        {
-            use_powershell = true;
+        match shell {
+            TargetShell::Pwsh => use_pwsh = true,
+            TargetShell::PowerShell => use_powershell = true,
+            TargetShell::Cmd => {}
         }
 
         let mut cmd = if use_pwsh || use_powershell {

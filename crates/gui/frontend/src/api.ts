@@ -110,6 +110,9 @@ export const updateTemplate = (
 export const deleteTemplate = (templateId: string): Promise<void> =>
   invoke('delete_template', { templateId });
 
+export const reorderTemplates = (ids: string[]): Promise<void> =>
+  invoke('reorder_templates', { ids });
+
 // ─── Process Lifecycle ────────────────────────────────────
 export const runCliTemplate = (templateId: string): Promise<string> =>
   invoke('run_cli_template', { templateId });

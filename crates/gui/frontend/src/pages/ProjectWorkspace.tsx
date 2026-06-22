@@ -7,7 +7,8 @@ import {
   getCliTools,
   getTemplates,
   getGlobalEnvVars,
-  onStatusEvent
+  onStatusEvent,
+  reorderTemplates
 } from '../api';
 import type { Project, AgentInstance, CliTool, Template } from '../types';
 import { useToast } from '../ToastContext';
@@ -26,6 +27,9 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateLaunching, setTemplateLaunching] = useState<string | null>(null);
+
+  // Drag and drop state for templates
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Fetch agents for project
   const refreshAgents = useCallback(async () => {
@@ -135,6 +139,39 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
     }
   };
 
+  // Drag and drop events for quick derive templates
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragEnter = (targetIndex: number) => {
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    const reorderArray = (list: Template[], fromIndex: number, toIndex: number): Template[] => {
+      const result = Array.from(list);
+      const [removed] = result.splice(fromIndex, 1);
+      result.splice(toIndex, 0, removed);
+      return result;
+    };
+
+    const newTemplates = reorderArray(templates, draggedIndex, targetIndex);
+    setTemplates(newTemplates);
+    setDraggedIndex(targetIndex);
+  };
+
+  const handleDragEnd = async () => {
+    if (draggedIndex === null) return;
+    setDraggedIndex(null);
+    try {
+      const ids = templates.map(t => t.id);
+      await reorderTemplates(ids);
+    } catch (e) {
+      console.error('Failed to save template order', e);
+      toast.error('Failed to save template order');
+    }
+  };
+
   const calculateDuration = (start: string, end?: string) => {
     if (!end) return '-';
     try {
@@ -194,9 +231,14 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
             </div>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-              {templates.map(tpl => (
+              {templates.map((tpl, i) => (
                 <button
                   key={tpl.id}
+                  draggable={true}
+                  onDragStart={(e) => handleDragStart(e, i)}
+                  onDragEnter={() => handleDragEnter(i)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => e.preventDefault()}
                   onClick={() => handleRunTemplate(tpl)}
                   disabled={templateLaunching === tpl.id}
                   className="btn btn-ghost"
@@ -208,9 +250,11 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
                     borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--border-subtle)',
                     backgroundColor: 'var(--bg-elevated)',
-                    cursor: 'pointer',
+                    cursor: 'grab',
                     fontSize: '0.85rem',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    opacity: draggedIndex === i ? 0.4 : 1,
+                    transition: 'opacity 0.2s, transform 0.2s',
                   }}
                 >
                   {templateLaunching === tpl.id ? '⏳' : '🟢'}

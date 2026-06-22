@@ -22,6 +22,7 @@ use loom_core::storage::{
     get_templates as core_get_templates,
     delete_template as core_delete_template,
     update_template as core_update_template,
+    reorder_templates as core_reorder_templates,
     delete_cli_tool as core_delete_cli_tool,
     delete_category as core_delete_category,
     run_cli_template as core_run_cli_template,
@@ -248,6 +249,11 @@ fn delete_project(id: String) -> Result<(), String> {
 #[tauri::command]
 fn reorder_projects(ids: Vec<String>) -> Result<(), String> {
     core_reorder_projects(ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reorder_templates(ids: Vec<String>) -> Result<(), String> {
+    core_reorder_templates(ids).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -868,6 +874,7 @@ fn main() {
             create_project,
             delete_project,
             reorder_projects,
+            reorder_templates,
             reorder_cli_tools,
             get_project_agents,
             spawn_project_agent,

@@ -6,6 +6,22 @@ import { describe, test, expect, beforeEach, afterAll } from 'vitest';
 const CLI_BINARY = path.resolve(__dirname, '../../target/debug/loom');
 const CONFIG_PATH = path.resolve(__dirname, '../temp_config_cli.json');
 
+/**
+ * Helper to dynamically read the current workspace version from Cargo.toml.
+ * Choosing a dynamic parser avoids breaking E2E tests during version bumps.
+ */
+function getExpectedVersion(): string {
+  const cargoPath = path.resolve(__dirname, '../../Cargo.toml');
+  const cargoContent = fs.readFileSync(cargoPath, 'utf8');
+
+  // Match the version inside [workspace.package]
+  const match = cargoContent.match(/\[workspace\.package\][\s\S]*?version\s*=\s*"([^"]+)"/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  throw new Error('Could not parse version from Cargo.toml');
+}
+
 async function runCli(args: string[], env: any = {}) {
   const ext = process.platform === 'win32' ? '.exe' : '';
   const binPath = `${CLI_BINARY}${ext}`;
@@ -49,12 +65,13 @@ describe('loom CLI E2E tests', () => {
 
   test('test_cli_version_info', async () => {
     const res = await runCli(['--version']);
+    const expected = `loom ${getExpectedVersion()}`;
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('loom 0.1.5');
+    expect(res.stdout).toContain(expected);
 
     const resShort = await runCli(['-v']);
     expect(resShort.exitCode).toBe(0);
-    expect(resShort.stdout).toContain('loom 0.1.5');
+    expect(resShort.stdout).toContain(expected);
   });
 
   test('test_cli_list_default_table', async () => {

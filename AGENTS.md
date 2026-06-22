@@ -20,3 +20,5 @@ Read the skill file for complete SDD workflow guidance.
 - Naming conventions
 - Team workflows
 - Custom tooling
+
+- 对于任何任务，你都必须用中文简单总结一下原始意图，然后简单描述你的计划，然后再执行。
