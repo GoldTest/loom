@@ -16,6 +16,7 @@ interface TerminalTabProps {
 
 export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: TerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const initialized = useRef<boolean>(false);
@@ -26,6 +27,22 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
     let active = true;
     let cleanupFn: (() => void) | null = null;
+
+    const preventScroll = (e: Event) => {
+      const el = e.currentTarget as HTMLElement;
+      if (el) {
+        el.scrollLeft = 0;
+      }
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('scroll', preventScroll);
+    }
+    const outer = outerRef.current;
+    if (outer) {
+      outer.addEventListener('scroll', preventScroll);
+    }
 
     const startInit = () => {
       if (!active || !containerRef.current) return;
@@ -200,6 +217,13 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       resizeObserver.disconnect();
       if (cleanupFn) cleanupFn();
 
+      if (container) {
+        container.removeEventListener('scroll', preventScroll);
+      }
+      if (outer) {
+        outer.removeEventListener('scroll', preventScroll);
+      }
+
       const term = termRef.current;
       termRef.current = null;
       fitAddonRef.current = null;
@@ -245,6 +269,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
   return (
     <div
+      ref={outerRef}
       style={{
         width: '100%',
         height: '100%',
@@ -261,6 +286,18 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         }
         .xterm-viewport {
           height: 100% !important;
+        }
+        .xterm-helper-textarea {
+          font-family: Consolas, "Courier New", monospace !important;
+          font-size: 13px !important;
+          line-height: 1.2 !important;
+          width: 1px !important;
+          height: 1px !important;
+          border: 0 !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          outline: none !important;
+          box-shadow: none !important;
         }
       `}</style>
       <div
