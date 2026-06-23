@@ -1,22 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  getProjectAgents,
-  spawnProjectAgent,
-  killAgentProcess,
-  bringAgentToForeground,
   getCliTools,
   getTemplates,
   getGlobalEnvVars,
-  onStatusEvent,
   reorderTemplates
 } from '../api';
-import type { Project, AgentInstance, CliTool, Template } from '../types';
+import type { Project, CliTool, Template } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TerminalTab } from '../components/TerminalTab';
 
 interface Props {
   project: Project;
+  isVisible: boolean;
   onUnregisterProject: (proj: Project) => void;
 }
 
@@ -30,11 +26,10 @@ interface ConsoleTab {
   env?: Record<string, string>;
 }
 
-export default function ProjectWorkspace({ project, onUnregisterProject }: Props) {
+export default function ProjectWorkspace({ project, isVisible, onUnregisterProject }: Props) {
   const { t } = useI18n();
   const toast = useToast();
 
-  const [activeAgents, setActiveAgents] = useState<AgentInstance[]>([]);
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateLaunching, setTemplateLaunching] = useState<string | null>(null);
@@ -48,18 +43,6 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('overview');
   const [isGridLayout, setIsGridLayout] = useState<boolean>(false);
-
-  // Fetch agents for project
-  const refreshAgents = useCallback(async () => {
-    try {
-      const list = await getProjectAgents(project.id);
-      const active = list.filter(a => a.status === 'running')
-        .sort((a, b) => b.start_time.localeCompare(a.start_time));
-      setActiveAgents(active);
-    } catch (e) {
-      console.error('Failed to fetch project agents', e);
-    }
-  }, [project.id]);
 
   // Load tools & templates
   const loadToolsAndTemplates = useCallback(async () => {
@@ -76,38 +59,10 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      refreshAgents();
       loadToolsAndTemplates();
     }, 0);
     return () => clearTimeout(timer);
-  }, [project.id, refreshAgents, loadToolsAndTemplates]);
-
-  // Status Event Listeners
-  useEffect(() => {
-    let unlistenStatus: (() => void) | undefined;
-
-    onStatusEvent(() => {
-      refreshAgents();
-    }).then(fn => { unlistenStatus = fn; });
-
-    return () => {
-      if (unlistenStatus) unlistenStatus();
-    };
-  }, [refreshAgents]);
-
-  // Kill agent process
-  const handleKill = async (agent: AgentInstance) => {
-    try {
-      setActiveAgents(prev => prev.filter(a => a.id !== agent.id));
-
-      await killAgentProcess(agent.id);
-      toast.success(t('inst.toast.terminated'));
-      setTimeout(refreshAgents, 300);
-    } catch (err) {
-      toast.error(String(err) || 'Failed to terminate agent');
-      refreshAgents();
-    }
-  };
+  }, [project.id, loadToolsAndTemplates]);
 
   // Run Template and spawn a new immersive Terminal Tab in project workspace
   const handleRunTemplate = async (tpl: Template) => {
@@ -155,15 +110,7 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
     }
   };
 
-  // Helper date/time formatters
-  const formatTime = (epochSecondsStr: string) => {
-    try {
-      const date = new Date(parseInt(epochSecondsStr) * 1000);
-      return date.toLocaleTimeString();
-    } catch {
-      return epochSecondsStr;
-    }
-  };
+
 
   // Drag and drop events for quick derive templates
   const handleDragStart = (e: React.DragEvent, index: number) => {
@@ -415,113 +362,20 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
               )}
             </div>
 
-            {/* Active Agents Grid */}
-            <div className="launcher-card" style={{ backgroundColor: 'transparent', padding: '12px 0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🟢 {t('proj.agents.activeTitle')} ({activeAgents.length})
-              </h3>
-              {activeAgents.length === 0 ? (
-                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.9rem', fontStyle: 'italic', padding: '4px 8px' }}>
-                  {t('proj.agents.noActive')}
-                </div>
-              ) : (
-                <div className="agents-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-                  {activeAgents.map(agent => (
-                    <div
-                      key={agent.id}
-                      className="agent-card"
-                      style={{
-                        backgroundColor: 'var(--bg-elevated)',
-                        padding: '16px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--border-subtle)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                        position: 'relative',
-                        transition: 'transform 0.2s ease',
-                        cursor: 'pointer'
-                      }}
-                      onClick={async () => {
-                        try {
-                          await bringAgentToForeground(agent.id);
-                        } catch (err) {
-                          console.error('Failed to bring agent to foreground:', err);
-                        }
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '1rem' }}>
-                          {agent.command}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span className="status-light running" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--accent-emerald)', boxShadow: '0 0 8px var(--accent-emerald)' }}></span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--accent-emerald)' }}>{t('proj.status.running')}</span>
-                        </div>
-                      </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{t('proj.agent.card.pid')}</span>
-                          <span style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{agent.pid || '-'}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{t('proj.agent.card.started')}</span>
-                          <span>{formatTime(agent.start_time)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Args</span>
-                          <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }} title={agent.arguments.join(' ')}>
-                            {agent.arguments.join(' ') || '(none)'}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Env</span>
-                          <span style={{ fontSize: '0.75rem', color: agent.env_mode === 'isolated' ? 'var(--accent-sky)' : 'var(--text-tertiary)' }}>
-                            {agent.env_mode === 'isolated' ? t('proj.launcher.envMode.isolated') : t('proj.launcher.envMode.inherit')}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }} onClick={e => e.stopPropagation()}>
-                        <button
-                          className="btn-secondary"
-                          onClick={async () => {
-                            try {
-                              await bringAgentToForeground(agent.id);
-                            } catch (err) {
-                              console.error('Failed to bring agent to foreground:', err);
-                            }
-                          }}
-                          style={{ padding: '4px 12px', fontSize: '0.85rem', cursor: 'pointer', backgroundColor: 'transparent', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', borderRadius: 'var(--radius-sm)' }}
-                        >
-                          📺 {t('proj.launcher.btn.spawn') === '启动 Agent' ? '前台显示' : 'Bring to Front'}
-                        </button>
-                        <button
-                          className="btn-danger"
-                          onClick={() => handleKill(agent)}
-                          style={{ padding: '4px 12px', fontSize: '0.85rem', backgroundColor: 'var(--accent-red)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
-                        >
-                          {t('proj.agent.card.btn.kill')}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
 
         {/* Terminals Viewport (Tabbed or Tiled Grid) */}
         <div style={{ ...getGridStyle(), flex: 1, minHeight: 0 }}>
           {terminals.map((tab, idx) => {
-            const isVisible = showGrid ? (idx < 2) : (tab.id === activeTabId);
+            const isTabVisible = showGrid ? (idx < 2) : (tab.id === activeTabId);
+            const isTerminalVisible = isVisible && isTabVisible;
             return (
               <div
                 key={tab.id}
                 style={{
-                  display: isVisible ? 'block' : 'none',
+                  display: isTabVisible ? 'block' : 'none',
                   flex: showGrid ? 1 : undefined,
                   width: showGrid ? '0px' : '100%',
                   height: '100%'
@@ -533,7 +387,7 @@ export default function ProjectWorkspace({ project, onUnregisterProject }: Props
                   command={tab.command}
                   args={tab.args}
                   env={tab.env}
-                  isVisible={isVisible}
+                  isVisible={isTerminalVisible}
                 />
               </div>
             );

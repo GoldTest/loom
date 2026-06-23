@@ -266,10 +266,17 @@ function App() {
     try {
       await deleteProject(proj.id);
       toast.success(t('proj.toast.deleted'));
-      setProjects(prev => prev.filter(p => p.id !== proj.id));
-      if (selectedProjectId === proj.id) {
-        setSelectedProjectId('');
-      }
+      setProjects(prev => {
+        const updated = prev.filter(p => p.id !== proj.id);
+        if (selectedProjectId === proj.id) {
+          if (updated.length > 0) {
+            setSelectedProjectId(updated[0].id);
+          } else {
+            setSelectedProjectId('');
+          }
+        }
+        return updated;
+      });
     } catch (e) {
       toast.error(String(e) || t('proj.toast.deleteFailed'));
     }
@@ -390,13 +397,8 @@ function App() {
 
       {/* ── Main Content ─────────────────────────────────── */}
       <main className="main-content">
-        {page === 'workspace' && (
-          selectedProject ? (
-            <ProjectWorkspace 
-              project={selectedProject} 
-              onUnregisterProject={handleUnregisterProject}
-            />
-          ) : (
+        <div style={{ display: page === 'workspace' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          {projects.length === 0 ? (
             <div className="empty-state-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '60px', backgroundColor: 'var(--bg-card)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)', textAlign: 'center', margin: '40px auto', maxWidth: '600px' }}>
               <div style={{ fontSize: '3rem' }}>📁</div>
               <h2>{t('proj.empty.noProjects')}</h2>
@@ -407,10 +409,28 @@ function App() {
                 {t('proj.btn.new')}
               </button>
             </div>
-          )
-        )}
+          ) : (
+            projects.map(p => (
+              <div
+                key={p.id}
+                style={{
+                  display: p.id === selectedProjectId ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0
+                }}
+              >
+                <ProjectWorkspace 
+                  project={p} 
+                  isVisible={p.id === selectedProjectId}
+                  onUnregisterProject={handleUnregisterProject}
+                />
+              </div>
+            ))
+          )}
+        </div>
         
-        {page === 'settings' && (
+        <div style={{ display: page === 'settings' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <SettingsPage
             theme={theme}
             onThemeChange={handleThemeChange}
@@ -419,7 +439,7 @@ function App() {
             onFontFamilyChange={handleFontFamilyChange}
             onFontSizeChange={handleFontSizeChange}
           />
-        )}
+        </div>
       </main>
 
       {/* Register Project Modal */}
