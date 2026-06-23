@@ -133,17 +133,33 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         const handleStart = () => {
           isComposing = true;
           termEl.classList.add('is-composing');
+          textarea.scrollLeft = 0;
+          textarea.scrollTop = 0;
         };
         const handleEnd = () => {
           isComposing = false;
           termEl.classList.remove('is-composing');
+          textarea.scrollLeft = 0;
+          textarea.scrollTop = 0;
           flushPtyBuffer();
+        };
+        const handleUpdate = () => {
+          textarea.scrollLeft = 0;
+          textarea.scrollTop = 0;
+        };
+        const handleScroll = () => {
+          textarea.scrollLeft = 0;
+          textarea.scrollTop = 0;
         };
         textarea.addEventListener('compositionstart', handleStart);
         textarea.addEventListener('compositionend', handleEnd);
+        textarea.addEventListener('compositionupdate', handleUpdate);
+        textarea.addEventListener('scroll', handleScroll);
         cleanupComposition = () => {
           textarea.removeEventListener('compositionstart', handleStart);
           textarea.removeEventListener('compositionend', handleEnd);
+          textarea.removeEventListener('compositionupdate', handleUpdate);
+          textarea.removeEventListener('scroll', handleScroll);
         };
       }
 
@@ -378,6 +394,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           background: transparent !important;
           caret-color: transparent !important;
           opacity: 1 !important;
+          width: 1000px !important;
           z-index: 10 !important;
         }
       `}</style>
