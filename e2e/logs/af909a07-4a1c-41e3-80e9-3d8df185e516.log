@@ -1,0 +1,4 @@
+[SPAWN] Command: "D:\\Develop\\loom\\e2e\\temp_scenario_dev\\git.exe"
+[SPAWN] Args: ["mock-run", "--stdout", "commit 42d8a5"]
+[SPAWN] Working Dir: ""
+[EXIT] Status: stopped, Exit Code: Some(0)

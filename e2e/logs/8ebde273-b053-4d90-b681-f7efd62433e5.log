@@ -1,0 +1,3 @@
+[SPAWN] Command: "D:\\Develop\\loom\\target\\debug\\loom.exe"
+[SPAWN] Args: ["mock-run", "--stdout", "db backup done", "--exit", "0"]
+[EXIT] Status: stopped, Exit Code: Some(0)

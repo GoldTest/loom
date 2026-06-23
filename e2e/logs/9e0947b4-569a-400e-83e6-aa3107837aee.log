@@ -1,0 +1,3 @@
+[SPAWN] Command: "D:\\Develop\\loom\\e2e\\dummy_text.txt"
+[SPAWN] Args: []
+[EXIT] Status: stopped, Exit Code: Some(0)

@@ -27,6 +27,23 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
     let active = true;
     let cleanupFn: (() => void) | null = null;
+    let cleanupComposition: (() => void) | null = null;
+    let isComposing = false;
+    const ptyBuffer: Uint8Array[] = [];
+
+    const flushPtyBuffer = () => {
+      if (ptyBuffer.length > 0 && termRef.current) {
+        const totalLength = ptyBuffer.reduce((acc, val) => acc + val.length, 0);
+        const concatenated = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const arr of ptyBuffer) {
+          concatenated.set(arr, offset);
+          offset += arr.length;
+        }
+        termRef.current.write(concatenated);
+        ptyBuffer.length = 0;
+      }
+    };
 
     const preventGlobalScroll = (e: Event) => {
       const target = e.target;
@@ -40,8 +57,23 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       }
 
       const el = target as HTMLElement;
-      if (el && el.classList && el.classList.contains('xterm-viewport')) {
-        return;
+      if (el && el.classList) {
+        // Allow xterm viewport scrolling to function normally
+        if (el.classList.contains('xterm-viewport')) {
+          return;
+        }
+
+        // Never interfere with xterm's IME helper elements.
+        // xterm dynamically writes top/left on xterm-helper-textarea to track
+        // cursor position so the OS IME candidate box appears at the right spot.
+        // Forcing scrollLeft/scrollTop=0 on the textarea or its parent (.xterm-helpers)
+        // races with that JS and causes the candidate box to flicker or jump.
+        if (
+          el.classList.contains('xterm-helper-textarea') ||
+          el.classList.contains('xterm-helpers')
+        ) {
+          return;
+        }
       }
       if (el) {
         el.scrollLeft = 0;
@@ -94,6 +126,37 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
+
+      const textarea = term.textarea;
+      const termEl = term.element;
+      if (textarea && termEl) {
+        const handleStart = () => {
+          isComposing = true;
+          termEl.classList.add('is-composing');
+        };
+        const handleEnd = () => {
+          isComposing = false;
+          termEl.classList.remove('is-composing');
+          flushPtyBuffer();
+        };
+        textarea.addEventListener('compositionstart', handleStart);
+        textarea.addEventListener('compositionend', handleEnd);
+        cleanupComposition = () => {
+          textarea.removeEventListener('compositionstart', handleStart);
+          textarea.removeEventListener('compositionend', handleEnd);
+        };
+      }
+
+      // Let the browser handle standard copy and paste shortcuts
+      term.attachCustomKeyEventHandler((event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+          return false;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c' && term.hasSelection()) {
+          return false;
+        }
+        return true;
+      });
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
@@ -155,7 +218,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         const unlistenData = await listen<number[]>(`pty-data-${sessionId}`, (event) => {
           if (!termRef.current) return;
           const uint8Data = new Uint8Array(event.payload);
-          term.write(uint8Data);
+          if (isComposing) {
+            ptyBuffer.push(uint8Data);
+          } else {
+            term.write(uint8Data);
+          }
         });
         if (!termRef.current) {
           dataSub.dispose();
@@ -181,6 +248,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           dataSub.dispose();
           unlistenData();
           unlistenExit();
+          if (cleanupComposition) cleanupComposition();
         };
       };
 
@@ -223,6 +291,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       active = false;
       resizeObserver.disconnect();
       if (cleanupFn) cleanupFn();
+      if (cleanupComposition) cleanupComposition();
 
       document.removeEventListener('scroll', preventGlobalScroll, true);
 
@@ -290,12 +359,13 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         .xterm-viewport {
           height: 100% !important;
         }
-        .xterm-helpers {
-          left: 0 !important;
-          top: 0 !important;
+        .xterm .xterm-helpers {
+          left: 0;
+        }
+        .xterm.is-composing .xterm-helpers {
           z-index: 10 !important;
         }
-        .xterm-helper-textarea {
+        .xterm.is-composing .xterm-helper-textarea {
           font-family: Consolas, "Courier New", monospace !important;
           font-size: 13px !important;
           line-height: 1.2 !important;

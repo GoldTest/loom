@@ -1,0 +1,2 @@
+[SPAWN] Command: "D:\\Develop\\loom\\target\\debug\\loom.exe"
+[SPAWN] Args: ["mock-run", "--sleep", "2000"]

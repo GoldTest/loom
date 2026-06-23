@@ -175,6 +175,27 @@ function App() {
       .catch(() => {});
   }, []);
 
+  // Global keyboard shortcuts (e.g. Ctrl+A / Cmd+A Select All in inputs/textareas)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+          if (active.classList.contains('xterm-helper-textarea')) {
+            return;
+          }
+          e.preventDefault();
+          (active as HTMLInputElement | HTMLTextAreaElement).select();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, []);
+
   const handleThemeChange = async (newTheme: 'dark' | 'day') => {
     setThemeState(newTheme);
     document.body.className = `theme-${newTheme}`;
