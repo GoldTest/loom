@@ -287,17 +287,22 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         .xterm-viewport {
           height: 100% !important;
         }
+        .xterm-helpers {
+          left: 0 !important;
+          top: 0 !important;
+        }
         .xterm-helper-textarea {
           font-family: Consolas, "Courier New", monospace !important;
           font-size: 13px !important;
           line-height: 1.2 !important;
-          width: 1px !important;
-          height: 1px !important;
           border: 0 !important;
           padding: 0 !important;
           margin: 0 !important;
           outline: none !important;
           box-shadow: none !important;
+          color: transparent !important;
+          background: transparent !important;
+          opacity: 0.01 !important;
         }
       `}</style>
       <div
