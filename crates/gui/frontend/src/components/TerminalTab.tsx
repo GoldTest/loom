@@ -28,22 +28,28 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
     let active = true;
     let cleanupFn: (() => void) | null = null;
 
-    const preventScroll = (e: Event) => {
-      const el = e.currentTarget as HTMLElement;
+    const preventGlobalScroll = (e: Event) => {
+      const target = e.target;
+      if (target === document || target === window) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollLeft = 0;
+        document.documentElement.scrollTop = 0;
+        document.body.scrollLeft = 0;
+        document.body.scrollTop = 0;
+        return;
+      }
+
+      const el = target as HTMLElement;
+      if (el && el.classList && el.classList.contains('xterm-viewport')) {
+        return;
+      }
       if (el) {
         el.scrollLeft = 0;
         el.scrollTop = 0;
       }
     };
 
-    const container = containerRef.current;
-    if (container) {
-      container.addEventListener('scroll', preventScroll);
-    }
-    const outer = outerRef.current;
-    if (outer) {
-      outer.addEventListener('scroll', preventScroll);
-    }
+    document.addEventListener('scroll', preventGlobalScroll, true);
 
     const startInit = () => {
       if (!active || !containerRef.current) return;
@@ -218,12 +224,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       resizeObserver.disconnect();
       if (cleanupFn) cleanupFn();
 
-      if (container) {
-        container.removeEventListener('scroll', preventScroll);
-      }
-      if (outer) {
-        outer.removeEventListener('scroll', preventScroll);
-      }
+      document.removeEventListener('scroll', preventGlobalScroll, true);
 
       const term = termRef.current;
       termRef.current = null;
@@ -305,7 +306,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           box-shadow: none !important;
           color: transparent !important;
           background: transparent !important;
-          opacity: 0.01 !important;
+          caret-color: transparent !important;
+          opacity: 1 !important;
           z-index: 10 !important;
         }
       `}</style>
