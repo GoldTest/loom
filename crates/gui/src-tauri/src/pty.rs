@@ -210,30 +210,65 @@ pub fn spawn_pty_session(
     let shell_exe = {
         #[cfg(target_os = "windows")]
         {
-            let system32_powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-            let system32_cmd = "C:\\Windows\\System32\\cmd.exe";
+            // Detect shell with priority: pwsh -> powershell -> cmd
+            let find_pwsh = || -> Option<String> {
+                let check_path = |p: &str| -> Option<String> {
+                    let path = std::path::Path::new(p);
+                    if path.exists() {
+                        if let Ok(metadata) = std::fs::metadata(path) {
+                            if metadata.len() > 0 {
+                                return Some(p.to_string());
+                            }
+                        }
+                    }
+                    None
+                };
 
-            // 1. Try standard absolute paths for PowerShell 7+ (pwsh.exe) first
-            let pwsh_7_path = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
-            let pwsh_6_path = "C:\\Program Files\\PowerShell\\6\\pwsh.exe";
-            if std::path::Path::new(pwsh_7_path).exists() {
-                pwsh_7_path.to_string()
-            } else if std::path::Path::new(pwsh_6_path).exists() {
-                pwsh_6_path.to_string()
-            } else if let Ok(pwsh_path) = which::which("pwsh") {
-                let path_str = pwsh_path.to_string_lossy().to_string();
-                let path_lower = path_str.to_lowercase();
-                if !path_lower.contains("windowsapps") {
-                    path_str
-                } else if std::path::Path::new(system32_powershell).exists() {
-                    system32_powershell.to_string()
-                } else {
-                    system32_cmd.to_string()
+                if let Some(p) = check_path("C:\\Program Files\\PowerShell\\7\\pwsh.exe") {
+                    return Some(p);
                 }
-            } else if std::path::Path::new(system32_powershell).exists() {
-                system32_powershell.to_string()
+                if let Some(p) = check_path("C:\\Program Files\\PowerShell\\6\\pwsh.exe") {
+                    return Some(p);
+                }
+
+                if let Ok(path) = which::which("pwsh") {
+                    if let Ok(metadata) = std::fs::metadata(&path) {
+                        if metadata.len() > 0 {
+                            return Some(path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+                None
+            };
+
+            let find_powershell = || -> Option<String> {
+                let system32_powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+                if std::path::Path::new(system32_powershell).exists() {
+                    return Some(system32_powershell.to_string());
+                }
+                if let Ok(path) = which::which("powershell") {
+                    return Some(path.to_string_lossy().to_string());
+                }
+                None
+            };
+
+            let find_cmd = || -> String {
+                let system32_cmd = "C:\\Windows\\System32\\cmd.exe";
+                if std::path::Path::new(system32_cmd).exists() {
+                    return system32_cmd.to_string();
+                }
+                if let Ok(path) = which::which("cmd") {
+                    return path.to_string_lossy().to_string();
+                }
+                "cmd.exe".to_string()
+            };
+
+            if let Some(pwsh) = find_pwsh() {
+                pwsh
+            } else if let Some(ps) = find_powershell() {
+                ps
             } else {
-                system32_cmd.to_string()
+                find_cmd()
             }
         }
         #[cfg(not(target_os = "windows"))]

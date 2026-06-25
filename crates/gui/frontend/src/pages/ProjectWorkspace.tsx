@@ -26,6 +26,21 @@ interface ConsoleTab {
   env?: Record<string, string>;
 }
 
+/**
+ * 级联合并 CLI 工具的默认参数和模板自定义参数。
+ *
+ * TODO: 请在此处实现级联逻辑以形成最终派生终端所执行的完整参数列表。
+ * 请考虑：
+ * - 安全性：`tool.custom_args` 或 `tpl.args` 有可能为 undefined，应如何防护？
+ * - 顺序：通常工具默认参数在前，模板的特异性参数追加在后。
+ *
+ * @param tool 关联的 CLI 工具实体
+ * @param tpl 当前执行的模板
+ */
+export function getMergedArgs(tool: CliTool, tpl: Template): string[] {
+  return [...(tool.custom_args || []), ...(tpl.args || [])];
+}
+
 export default function ProjectWorkspace({ project, isVisible, onUnregisterProject }: Props) {
   const { t } = useI18n();
   const toast = useToast();
@@ -96,7 +111,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
         type: 'terminal',
         cwd: tpl.pwd ? (tpl.pwd.startsWith('/') || tpl.pwd.includes(':') ? tpl.pwd : `${project.root_path}/${tpl.pwd}`) : project.root_path,
         command: tool.path,
-        args: tpl.args,
+        args: getMergedArgs(tool, tpl),
         env: customEnvs
       };
 
