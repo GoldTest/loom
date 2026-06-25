@@ -51,13 +51,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
     };
 
     const getCellDimensions = () => {
-      const measureEl = containerRef.current?.querySelector('.xterm-char-measure-element');
-      if (measureEl) {
-        const rect = measureEl.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          return { width: rect.width, height: rect.height };
-        }
-      }
       const core = (termRef.current as any)?._core;
       if (core?._renderService?.dimensions?.css?.cell) {
         const cell = core._renderService.dimensions.css.cell;
@@ -65,7 +58,17 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           return { width: cell.width, height: cell.height };
         }
       }
-      return { width: 7.15, height: 15.17 };
+      const measureEl = containerRef.current?.querySelector('.xterm-char-measure-element');
+      if (measureEl) {
+        const rect = measureEl.getBoundingClientRect();
+        const text = measureEl.textContent || '';
+        const charCount = text.length || 1;
+        const width = rect.width / charCount;
+        if (width > 0 && rect.height > 0) {
+          return { width, height: rect.height };
+        }
+      }
+      return { width: 7.8, height: 15.17 };
     };
 
     const syncTextareaPosition = () => {
@@ -121,18 +124,6 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         container.style.setProperty('--ime-top', topPx);
         textarea.style.left = leftPx;
         textarea.style.top = topPx;
-
-        // Log coordinate values to the backend debug file
-        const isHidden = !!(term as any)?._core?.coreService?.isCursorHidden;
-        invoke('update_ime_position', {
-          x: target.x * width,
-          y: target.y * height,
-          cursorX: target.x,
-          cursorY: target.y,
-          cellW: width,
-          cellH: height,
-          isCursorHidden: isHidden
-        }).catch(() => {});
       }
     };
 
