@@ -14,7 +14,8 @@ import {
   getGlobalEnvVars,
   reorderCliTools,
   getAutostart,
-  setAutostart
+  setAutostart,
+  openUrl
 } from '../api';
 import type { CliTool, Category, Template, GlobalEnvVar } from '../types';
 import EnvVarsPage from './EnvVarsPage';
@@ -29,6 +30,7 @@ interface Props {
   onFontFamilyChange: (family: string) => Promise<void>;
   onFontSizeChange: (size: string) => Promise<void>;
   updateInfo?: { hasUpdate: boolean; latestVersion: string; url: string; error?: boolean } | null;
+  onCheckUpdate: (isManual: boolean) => Promise<void>;
 }
 
 const PRESETS = [
@@ -50,13 +52,27 @@ export default function SettingsPage({
   fontSize,
   onFontFamilyChange,
   onFontSizeChange,
-  updateInfo
+  updateInfo,
+  onCheckUpdate
 }: Props) {
   const { t, language, setLanguage } = useI18n();
   const toast = useToast();
   const [activeSubTab, setActiveSubTab] = useState<Tab>('general');
   const [appVersion, setAppVersion] = useState<string>('0.1.5');
   const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
+  const [isChecking, setIsChecking] = useState<boolean>(false);
+
+  const handleManualCheck = async () => {
+    if (isChecking) return;
+    setIsChecking(true);
+    try {
+      await onCheckUpdate(true);
+    } catch (err) {
+      console.error('Failed to manually check update:', err);
+    } finally {
+      setIsChecking(false);
+    }
+  };
 
   useEffect(() => {
     import('@tauri-apps/api/app')
@@ -645,70 +661,119 @@ export default function SettingsPage({
                   {t('settings.version.desc')}
                 </div>
 
-                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '14px', color: 'var(--text-primary)' }}>
-                  <span style={{ fontWeight: 600 }}>Loom v{appVersion}</span>
-                  <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>(Stable)</span>
-                  {updateInfo && updateInfo.hasUpdate && (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', marginLeft: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', fontSize: '14px', color: 'var(--text-primary)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <span style={{ fontWeight: 600 }}>Loom v{appVersion}</span>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>(Stable)</span>
+                    {updateInfo && updateInfo.hasUpdate && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', marginLeft: '8px' }}>
+                        <span style={{ 
+                          backgroundColor: 'rgba(235, 94, 40, 0.15)', 
+                          color: '#eb5e28', 
+                          padding: '2px 8px', 
+                          borderRadius: '12px', 
+                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          border: '1px solid rgba(235, 94, 40, 0.25)'
+                        }}>
+                          {t('settings.version.newUpdate')}
+                        </span>
+                        <a 
+                          href={updateInfo.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            openUrl(updateInfo.url).catch(err => console.error(err));
+                          }}
+                          style={{ 
+                            color: 'var(--accent-purple, #9b5de5)', 
+                            textDecoration: 'underline',
+                            fontWeight: 500,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t('settings.version.download')}
+                        </a>
+                      </div>
+                    )}
+                    {updateInfo && !updateInfo.hasUpdate && !updateInfo.error && (
                       <span style={{ 
-                        backgroundColor: 'rgba(235, 94, 40, 0.15)', 
-                        color: '#eb5e28', 
+                        backgroundColor: 'rgba(46, 196, 182, 0.12)', 
+                        color: '#2ec4b6', 
                         padding: '2px 8px', 
                         borderRadius: '12px', 
                         fontWeight: 600,
                         fontSize: '0.75rem',
-                        border: '1px solid rgba(235, 94, 40, 0.25)'
+                        border: '1px solid rgba(46, 196, 182, 0.22)',
+                        marginLeft: '8px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
                       }}>
-                        {t('settings.version.newUpdate')}
+                        ✓ {t('settings.version.upToDate')}
                       </span>
-                      <a 
-                        href={updateInfo.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        style={{ 
-                          color: 'var(--accent-purple, #9b5de5)', 
-                          textDecoration: 'underline',
-                          fontWeight: 500
-                        }}
-                      >
-                        {t('settings.version.download')}
-                      </a>
-                    </div>
-                  )}
-                  {updateInfo && !updateInfo.hasUpdate && !updateInfo.error && (
-                    <span style={{ 
-                      backgroundColor: 'rgba(46, 196, 182, 0.12)', 
-                      color: '#2ec4b6', 
-                      padding: '2px 8px', 
-                      borderRadius: '12px', 
-                      fontWeight: 600,
-                      fontSize: '0.75rem',
-                      border: '1px solid rgba(46, 196, 182, 0.22)',
-                      marginLeft: '8px',
+                    )}
+                    {updateInfo && updateInfo.error && (
+                      <span style={{ 
+                        backgroundColor: 'rgba(230, 57, 70, 0.12)', 
+                        color: '#e63946', 
+                        padding: '2px 8px', 
+                        borderRadius: '12px', 
+                        fontWeight: 600,
+                        fontSize: '0.75rem',
+                        border: '1px solid rgba(230, 57, 70, 0.22)',
+                        marginLeft: '8px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        ⚠ {t('settings.version.checkFailed')}
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleManualCheck}
+                    disabled={isChecking}
+                    style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      ✓ {t('settings.version.upToDate')}
-                    </span>
-                  )}
-                  {updateInfo && updateInfo.error && (
-                    <span style={{ 
-                      backgroundColor: 'rgba(230, 57, 70, 0.12)', 
-                      color: '#e63946', 
-                      padding: '2px 8px', 
-                      borderRadius: '12px', 
-                      fontWeight: 600,
-                      fontSize: '0.75rem',
-                      border: '1px solid rgba(230, 57, 70, 0.22)',
-                      marginLeft: '8px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      ⚠ {t('settings.version.checkFailed')}
-                    </span>
-                  )}
+                      justifyContent: 'center',
+                      gap: '6px',
+                      padding: '6px 14px',
+                      borderRadius: 'var(--radius-sm, 6px)',
+                      backgroundColor: isChecking ? 'var(--bg-button-disabled, #2a2b36)' : 'var(--accent-purple, #9b5de5)',
+                      color: isChecking ? 'var(--text-muted, #666)' : '#ffffff',
+                      border: 'none',
+                      cursor: isChecking ? 'not-allowed' : 'pointer',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      transition: 'all 200ms ease',
+                      boxShadow: 'none'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isChecking) {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.filter = 'brightness(1.1)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(155, 93, 229, 0.2)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'none';
+                      e.currentTarget.style.filter = 'none';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    {isChecking ? (
+                      <>
+                        <span className="scan-spinner" style={{ width: '12px', height: '12px', borderLeftColor: 'transparent', margin: 0 }} />
+                        {t('settings.version.checking')}
+                      </>
+                    ) : (
+                      t('settings.version.check')
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

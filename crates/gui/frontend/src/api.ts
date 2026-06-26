@@ -223,3 +223,6 @@ export const readTextFile = (filePath: string): Promise<string> =>
 export const writeTextFile = (filePath: string, content: string): Promise<void> =>
   invoke('write_text_file', { filePath, content });
 
+export const openUrl = (url: string): Promise<void> =>
+  invoke('open_url', { url });
+
