@@ -179,6 +179,79 @@ pub fn build_shell_args(
     args
 }
 
+fn expand_env_vars(arg: &str, envs: &HashMap<String, String>) -> String {
+    let mut result = arg.to_string();
+
+    // 1. Expand %VAR%
+    let mut start_idx = 0;
+    while let Some(start) = result[start_idx..].find('%') {
+        let abs_start = start_idx + start;
+        if let Some(end) = result[abs_start + 1..].find('%') {
+            let abs_end = abs_start + 1 + end;
+            let key = &result[abs_start + 1..abs_end];
+            if !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                let val = envs.get(key).cloned().unwrap_or_default();
+                result.replace_range(abs_start..=abs_end, &val);
+                start_idx = abs_start + val.len();
+                continue;
+            }
+        }
+        start_idx = abs_start + 1;
+    }
+
+    // 2. Expand $env:VAR
+    let mut start_idx = 0;
+    while let Some(start) = result[start_idx..].find("$env:") {
+        let abs_start = start_idx + start;
+        let key_start = abs_start + 5;
+        let mut key_end = key_start;
+        for c in result[key_start..].chars() {
+            if c.is_alphanumeric() || c == '_' {
+                key_end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if key_end > key_start {
+            let key = &result[key_start..key_end];
+            let val = envs.get(key).cloned().unwrap_or_default();
+            result.replace_range(abs_start..key_end, &val);
+            start_idx = abs_start + val.len();
+        } else {
+            start_idx = key_start;
+        }
+    }
+
+    // 3. Expand $VAR
+    let mut start_idx = 0;
+    while let Some(start) = result[start_idx..].find('$') {
+        let abs_start = start_idx + start;
+        if result[abs_start..].starts_with("$env:") {
+            start_idx = abs_start + 5;
+            continue;
+        }
+        let key_start = abs_start + 1;
+        let mut key_end = key_start;
+        for c in result[key_start..].chars() {
+            if c.is_alphanumeric() || c == '_' {
+                key_end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if key_end > key_start {
+            let key = &result[key_start..key_end];
+            let val = envs.get(key).cloned().unwrap_or_default();
+            result.replace_range(abs_start..key_end, &val);
+            start_idx = abs_start + val.len();
+        } else {
+            start_idx = key_start;
+        }
+    }
+
+    result
+}
+
 // Core PTY spawn function
 pub fn spawn_pty_session(
     app: AppHandle,
@@ -285,6 +358,16 @@ pub fn spawn_pty_session(
     }
 
     // Merge template-specific environment overrides if provided
+    let mut merged_envs = HashMap::new();
+    for (key, val) in std::env::vars() {
+        merged_envs.insert(key, val);
+    }
+    if let Some(ref custom_envs) = env {
+        for (key, val) in custom_envs {
+            merged_envs.insert(key.clone(), val.clone());
+        }
+    }
+
     if let Some(custom_envs) = env {
         for (key, val) in custom_envs {
             cmd_builder.env(key, val);
@@ -292,7 +375,11 @@ pub fn spawn_pty_session(
     }
 
     // Resolve parameter arguments inside the interactive shell
-    let shell_args = build_shell_args(&shell_exe, command.as_deref(), args.as_deref());
+    let expanded_args = args.as_ref().map(|raw_args| {
+        raw_args.iter().map(|arg| expand_env_vars(arg, &merged_envs)).collect::<Vec<String>>()
+    });
+
+    let shell_args = build_shell_args(&shell_exe, command.as_deref(), expanded_args.as_deref());
     if !shell_args.is_empty() {
         cmd_builder.args(shell_args);
     }

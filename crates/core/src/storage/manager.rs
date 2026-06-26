@@ -127,10 +127,27 @@ fn migrate_legacy_config(new_path: &Path) {
 pub fn get_config_path() -> PathBuf {
     if let Ok(p) = env::var("LOOM_CONFIG_PATH") {
         PathBuf::from(p)
-    } else if let Some(proj_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
+    } else if let Some(proj_dirs) = directories::ProjectDirs::from(
+        "com",
+        "loom",
+        if cfg!(debug_assertions) { "LoomDev" } else { "Loom" }
+    ) {
         let config_dir = proj_dirs.config_dir();
         let _ = fs::create_dir_all(config_dir);
         let path = config_dir.join("loom.json");
+        
+        #[cfg(debug_assertions)]
+        {
+            if !path.exists() {
+                if let Some(release_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
+                    let release_path = release_dirs.config_dir().join("loom.json");
+                    if release_path.exists() {
+                        let _ = fs::copy(&release_path, &path);
+                    }
+                }
+            }
+        }
+
         migrate_legacy_config(&path);
         path
     } else {
@@ -168,6 +185,79 @@ pub fn read_agent_logs(instance_id: String) -> Result<Vec<String>> {
     Ok(lines)
 }
 
+fn expand_env_vars(arg: &str, envs: &HashMap<String, String>) -> String {
+    let mut result = arg.to_string();
+
+    // 1. Expand %VAR%
+    let mut start_idx = 0;
+    while let Some(start) = result[start_idx..].find('%') {
+        let abs_start = start_idx + start;
+        if let Some(end) = result[abs_start + 1..].find('%') {
+            let abs_end = abs_start + 1 + end;
+            let key = &result[abs_start + 1..abs_end];
+            if !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                let val = envs.get(key).cloned().unwrap_or_default();
+                result.replace_range(abs_start..=abs_end, &val);
+                start_idx = abs_start + val.len();
+                continue;
+            }
+        }
+        start_idx = abs_start + 1;
+    }
+
+    // 2. Expand $env:VAR
+    let mut start_idx = 0;
+    while let Some(start) = result[start_idx..].find("$env:") {
+        let abs_start = start_idx + start;
+        let key_start = abs_start + 5;
+        let mut key_end = key_start;
+        for c in result[key_start..].chars() {
+            if c.is_alphanumeric() || c == '_' {
+                key_end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if key_end > key_start {
+            let key = &result[key_start..key_end];
+            let val = envs.get(key).cloned().unwrap_or_default();
+            result.replace_range(abs_start..key_end, &val);
+            start_idx = abs_start + val.len();
+        } else {
+            start_idx = key_start;
+        }
+    }
+
+    // 3. Expand $VAR
+    let mut start_idx = 0;
+    while let Some(start) = result[start_idx..].find('$') {
+        let abs_start = start_idx + start;
+        if result[abs_start..].starts_with("$env:") {
+            start_idx = abs_start + 5;
+            continue;
+        }
+        let key_start = abs_start + 1;
+        let mut key_end = key_start;
+        for c in result[key_start..].chars() {
+            if c.is_alphanumeric() || c == '_' {
+                key_end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if key_end > key_start {
+            let key = &result[key_start..key_end];
+            let val = envs.get(key).cloned().unwrap_or_default();
+            result.replace_range(abs_start..key_end, &val);
+            start_idx = abs_start + val.len();
+        } else {
+            start_idx = key_start;
+        }
+    }
+
+    result
+}
+
 pub fn spawn_in_new_terminal(
     executable_path: &Path,
     args: &[String],
@@ -177,6 +267,24 @@ pub fn spawn_in_new_terminal(
     config: &AppConfig,
     command: &str,
 ) -> std::io::Result<Child> {
+    let mut merged_envs = HashMap::new();
+    for (key, val) in std::env::vars() {
+        merged_envs.insert(key, val);
+    }
+    if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+        for (k, v) in &tool.custom_env {
+            merged_envs.insert(k.clone(), v.clone());
+        }
+    }
+    for (k, v) in custom_envs {
+        merged_envs.insert(k.clone(), v.clone());
+    }
+
+    let processed_args: Vec<String> = args
+        .iter()
+        .map(|a| expand_env_vars(a, &merged_envs))
+        .collect();
+
     #[cfg(target_os = "windows")]
     {
         // Detect shell once and cache it to avoid blocking the main UI thread in release mode.
@@ -235,7 +343,7 @@ pub fn spawn_in_new_terminal(
                 "".to_string()
             };
             let escaped_exe = executable_path.to_string_lossy().replace("'", "''");
-            let escaped_args: Vec<String> = args.iter().map(|a| format!("'{}'", a.replace("'", "''"))).collect();
+            let escaped_args: Vec<String> = processed_args.iter().map(|a| format!("'{}'", a.replace("'", "''"))).collect();
 
             let command_str = format!(
                 "{}& '{}' {}",
@@ -255,7 +363,7 @@ pub fn spawn_in_new_terminal(
                 "".to_string()
             };
             let escaped_exe = executable_path.to_string_lossy().replace("\"", "\"\"");
-            let escaped_args: Vec<String> = args.iter().map(|a| format!("\"{}\"", a.replace("\"", "\"\""))).collect();
+            let escaped_args: Vec<String> = processed_args.iter().map(|a| format!("\"{}\"", a.replace("\"", "\"\""))).collect();
 
             let command_str = format!(
                 "{}\"{}\" {}",
@@ -309,7 +417,7 @@ pub fn spawn_in_new_terminal(
     #[cfg(not(target_os = "windows"))]
     {
         let mut cmd = Command::new(executable_path);
-        cmd.args(args);
+        cmd.args(&processed_args);
         if !working_dir.as_os_str().is_empty() {
             cmd.current_dir(working_dir);
         }
@@ -358,9 +466,26 @@ impl StorageManager {
     pub fn new() -> std::result::Result<Self, StorageError> {
         let path = if let Ok(p) = env::var("LOOM_CONFIG_PATH") {
             PathBuf::from(p)
-        } else if let Some(proj_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
+        } else if let Some(proj_dirs) = directories::ProjectDirs::from(
+            "com",
+            "loom",
+            if cfg!(debug_assertions) { "LoomDev" } else { "Loom" }
+        ) {
             let p = proj_dirs.data_local_dir().join("loom.json");
             let _ = fs::create_dir_all(proj_dirs.data_local_dir());
+            
+            #[cfg(debug_assertions)]
+            {
+                if !p.exists() {
+                    if let Some(release_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
+                        let release_p = release_dirs.data_local_dir().join("loom.json");
+                        if release_p.exists() {
+                            let _ = fs::copy(&release_p, &p);
+                        }
+                    }
+                }
+            }
+
             migrate_legacy_config(&p);
             p
         } else {
@@ -892,6 +1017,164 @@ pub fn delete_category(cat_id: String) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ArgKey {
+    Positional(usize),
+    Flag(String),
+    Named(String),
+    Config { switch: String, subkey: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ArgValue {
+    None,
+    Single(String),
+    ConfigValue(String),
+}
+
+struct ParsedArg {
+    key: ArgKey,
+    value: ArgValue,
+    original_switch: Option<char>,
+}
+
+fn parse_args(args: &[String]) -> Vec<ParsedArg> {
+    let mut parsed = Vec::new();
+    let mut positional_count = 0;
+    let mut i = 0;
+    while i < args.len() {
+        let item = &args[i];
+        if item.is_empty() {
+            i += 1;
+            continue;
+        }
+        if (item == "-c" || item == "--config") && i + 1 < args.len() && args[i + 1].contains('=') {
+            let val_str = &args[i + 1];
+            if let Some(eq_idx) = val_str.find('=') {
+                let subkey = val_str[..eq_idx].to_string();
+                let val = val_str[eq_idx + 1..].to_string();
+                parsed.push(ParsedArg {
+                    key: ArgKey::Config { switch: item.clone(), subkey },
+                    value: ArgValue::ConfigValue(val),
+                    original_switch: None,
+                });
+                i += 2;
+                continue;
+            }
+        }
+        
+        if item.starts_with('-') && item.contains('=') {
+            if let Some(eq_idx) = item.find('=') {
+                let key = item[..eq_idx].to_string();
+                let val = item[eq_idx + 1..].to_string();
+                parsed.push(ParsedArg {
+                    key: ArgKey::Named(key),
+                    value: ArgValue::Single(val),
+                    original_switch: Some('='),
+                });
+                i += 1;
+                continue;
+            }
+        }
+        
+        if item.starts_with('-') {
+            if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                parsed.push(ParsedArg {
+                    key: ArgKey::Named(item.clone()),
+                    value: ArgValue::Single(args[i + 1].clone()),
+                    original_switch: None,
+                });
+                i += 2;
+            } else {
+                parsed.push(ParsedArg {
+                    key: ArgKey::Flag(item.clone()),
+                    value: ArgValue::None,
+                    original_switch: None,
+                });
+                i += 1;
+            }
+        } else {
+            parsed.push(ParsedArg {
+                key: ArgKey::Positional(positional_count),
+                value: ArgValue::Single(item.clone()),
+                original_switch: None,
+            });
+            positional_count += 1;
+            i += 1;
+        }
+    }
+    parsed
+}
+
+fn get_arg_key_str(key: &ArgKey) -> String {
+    match key {
+        ArgKey::Positional(idx) => format!("pos:{}", idx),
+        ArgKey::Flag(k) => format!("flag:{}", k),
+        ArgKey::Named(k) => format!("named:{}", k),
+        ArgKey::Config { switch, subkey } => format!("config:{}:{}", switch, subkey),
+    }
+}
+
+pub fn merge_cli_args(base_args: &[String], override_args: &[String]) -> Vec<String> {
+    let base_parsed = parse_args(base_args);
+    let override_parsed = parse_args(override_args);
+
+    let mut merged_map = std::collections::HashMap::new();
+    let mut order = Vec::new();
+
+    for arg in base_parsed {
+        let key_str = get_arg_key_str(&arg.key);
+        merged_map.insert(key_str.clone(), arg);
+        order.push(key_str);
+    }
+
+    for arg in override_parsed {
+        let key_str = get_arg_key_str(&arg.key);
+        if let Some(existing) = merged_map.get_mut(&key_str) {
+            existing.value = arg.value;
+            if arg.original_switch.is_some() {
+                existing.original_switch = arg.original_switch;
+            }
+        } else {
+            merged_map.insert(key_str.clone(), arg);
+            order.push(key_str);
+        }
+    }
+
+    let mut result = Vec::new();
+    for key_str in order {
+        if let Some(arg) = merged_map.get(&key_str) {
+            match &arg.key {
+                ArgKey::Positional(_) => {
+                    if let ArgValue::Single(v) = &arg.value {
+                        result.push(v.clone());
+                    }
+                }
+                ArgKey::Flag(k) => {
+                    result.push(k.clone());
+                }
+                ArgKey::Named(k) => {
+                    if let ArgValue::Single(v) = &arg.value {
+                        if arg.original_switch == Some('=') {
+                            result.push(format!("{}={}", k, v));
+                        } else {
+                            result.push(k.clone());
+                            result.push(v.clone());
+                        }
+                    }
+                }
+                ArgKey::Config { switch, subkey } => {
+                    if let ArgValue::ConfigValue(v) = &arg.value {
+                        result.push(switch.clone());
+                        result.push(format!("{}={}", subkey, v));
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
 pub fn run_cli_template(
     template_id: String,
     on_event: Option<Arc<dyn Fn(String, serde_json::Value) + Send + Sync + 'static>>,
@@ -928,8 +1211,7 @@ pub fn run_cli_template(
 
     let env_mode = template.env_mode.clone().unwrap_or_else(|| "inherit".to_string());
 
-    let mut final_args = tool.custom_args.clone();
-    final_args.extend(template.args.clone());
+    let final_args = merge_cli_args(&tool.custom_args, &template.args);
 
     let child = spawn_in_new_terminal(
         &tool.path,

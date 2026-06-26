@@ -946,14 +946,18 @@ fn main() {
         }
     }
 
-    tauri::Builder::default()
-        .manage(pty::PtyState::default())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
+    let builder = tauri::Builder::default()
+        .manage(pty::PtyState::default());
+
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .setup(|app| {
             // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).

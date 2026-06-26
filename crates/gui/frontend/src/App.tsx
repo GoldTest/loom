@@ -525,7 +525,7 @@ function App() {
               >
                 <ProjectWorkspace 
                   project={p} 
-                  isVisible={p.id === selectedProjectId}
+                  isVisible={page === 'workspace' && p.id === selectedProjectId}
                   onUnregisterProject={handleUnregisterProject}
                 />
               </div>

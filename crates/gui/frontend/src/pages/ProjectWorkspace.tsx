@@ -32,19 +32,16 @@ interface ConsoleTab {
   isDirty?: boolean;
 }
 
+import { mergeCliArgs } from '../utils';
+
 /**
  * 级联合并 CLI 工具的默认参数和模板自定义参数。
- *
- * TODO: 请在此处实现级联逻辑以形成最终派生终端所执行的完整参数列表。
- * 请考虑：
- * - 安全性：`tool.custom_args` 或 `tpl.args` 有可能为 undefined，应如何防护？
- * - 顺序：通常工具默认参数在前，模板的特异性参数追加在后。
  *
  * @param tool 关联的 CLI 工具实体
  * @param tpl 当前执行的模板
  */
 export function getMergedArgs(tool: CliTool, tpl: Template): string[] {
-  return [...(tool.custom_args || []), ...(tpl.args || [])];
+  return mergeCliArgs(tool.custom_args || [], tpl.args || []);
 }
 
 export default function ProjectWorkspace({ project, isVisible, onUnregisterProject }: Props) {
@@ -297,11 +294,13 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadToolsAndTemplates();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [project.id, loadToolsAndTemplates]);
+    if (isVisible) {
+      const timer = setTimeout(() => {
+        loadToolsAndTemplates();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [project.id, isVisible, loadToolsAndTemplates]);
 
   // Run Template and spawn a new immersive Terminal Tab in project workspace
   const handleRunTemplate = async (tpl: Template) => {

@@ -10,6 +10,7 @@ import {
 import type { CliTool, Template, GlobalEnvVar } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
+import { mergeCliArgs } from '../utils';
 
 interface Props {
   tools: CliTool[];
@@ -26,7 +27,7 @@ export function TemplateModal({
   onSave: () => void;
 }) {
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState<'general' | 'args' | 'env'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'env'>('general');
   const [cliId, setCliId] = useState(template?.cli_id ?? defaultCliId ?? (tools[0]?.id ?? ''));
   const [name, setName] = useState(template?.name ?? '');
   const [argsStr, setArgsStr] = useState(template?.args.join(' ') ?? '');
@@ -80,7 +81,11 @@ export function TemplateModal({
   const getPreviewText = () => {
     const selectedToolObj = tools.find(t => t.id === cliId);
     const exeName = selectedToolObj ? selectedToolObj.name : 'cli-tool';
-    const finalArgs = argsStr.trim() ? ` ${argsStr.trim()}` : '';
+    
+    const toolArgs = selectedToolObj?.custom_args ?? [];
+    const templateArgs = argsStr.trim() ? argsStr.trim().split(/\s+/) : [];
+    const mergedArgs = mergeCliArgs(toolArgs, templateArgs);
+    const finalArgs = mergedArgs.length > 0 ? ` ${mergedArgs.join(' ')}` : '';
     
     // Gather environments (both custom and active global env vars)
     const activeGlobalVars = globalVars.filter(gv => selectedGlobalVarIds.includes(gv.id));
@@ -121,13 +126,6 @@ export function TemplateModal({
           </button>
           <button
             type="button"
-            className={`spec-tab-btn ${activeTab === 'args' ? 'active' : ''}`}
-            onClick={() => setActiveTab('args')}
-          >
-            <span>⚙️</span> {t('temp.modal.argsTab') || '参数 & 目录'}
-          </button>
-          <button
-            type="button"
             className={`spec-tab-btn ${activeTab === 'env' ? 'active' : ''}`}
             onClick={() => setActiveTab('env')}
           >
@@ -152,6 +150,14 @@ export function TemplateModal({
                     <input className="input" placeholder={t('temp.modal.namePlaceholder')} value={name} onChange={e => setName(e.target.value)} autoFocus />
                   </div>
                   <div className="form-group">
+                    <label className="form-label">{t('temp.card.args') || '参数'}</label>
+                    <input className="input" placeholder={t('temp.modal.argsPlaceholder')} value={argsStr} onChange={e => setArgsStr(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">{t('temp.modal.pwd')}</label>
+                    <input className="input" placeholder={t('temp.modal.pwdPlaceholder')} value={pwd} onChange={e => setPwd(e.target.value)} />
+                  </div>
+                  <div className="form-group">
                     <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {t('temp.modal.cmdOverride')}
                       <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 400, fontFamily: 'monospace' }}>loom &lt;name&gt;</span>
@@ -163,19 +169,6 @@ export function TemplateModal({
                       onChange={e => setCmdOverride(e.target.value)}
                       style={{ fontFamily: 'monospace', fontSize: 12 }}
                     />
-                  </div>
-                </>
-              )}
-
-              {activeTab === 'args' && (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">{t('temp.card.args')}</label>
-                    <input className="input" placeholder={t('temp.modal.argsPlaceholder')} value={argsStr} onChange={e => setArgsStr(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">{t('temp.modal.pwd')}</label>
-                    <input className="input" placeholder={t('temp.modal.pwdPlaceholder')} value={pwd} onChange={e => setPwd(e.target.value)} />
                   </div>
                 </>
               )}
