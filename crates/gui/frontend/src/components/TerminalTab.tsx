@@ -34,6 +34,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
     let cleanupFn: (() => void) | null = null;
     let cleanupComposition: (() => void) | null = null;
     let isComposing = false;
+    let lastCompositionEndTime = 0;
     const ptyBuffer: Uint8Array[] = [];
 
     const flushPtyBuffer = () => {
@@ -235,6 +236,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         };
         const handleEnd = (e: any) => {
           isComposing = false;
+          lastCompositionEndTime = Date.now();
           termEl.classList.remove('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
@@ -265,7 +267,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           // Clear residue text before composition starts or during normal input
           const isIME = e.keyCode === 229 || e.key === 'Process';
           const isChar = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
-          if ((isIME || isChar) && !isComposing) {
+          const isJustFinishedComposition = (Date.now() - lastCompositionEndTime) < 100;
+          if ((isIME || isChar) && !isComposing && !isJustFinishedComposition) {
             if (textarea && textarea.value !== '') {
               console.log('IME Log: keydown - clearing residue textarea value:', JSON.stringify(textarea.value));
               textarea.value = '';
