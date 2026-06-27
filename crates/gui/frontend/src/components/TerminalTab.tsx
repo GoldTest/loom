@@ -548,9 +548,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           clip: auto !important;
           clip-path: none !important;
           overflow: visible !important;
-          color: #e4e4e7 !important; /* Make pinyin visible */
+          color: transparent !important; /* Hide textarea text to let xterm.js render it natively */
           background: transparent !important;
-          caret-color: #a1a1aa !important; /* Show caret */
+          caret-color: transparent !important; /* Hide caret */
           pointer-events: none !important;
           font-family: Consolas, "Courier New", monospace !important;
           font-size: 13px !important;
