@@ -15,9 +15,9 @@ Read the skill file for complete SDD workflow guidance.
 
 ## Project-Specific Rules
 
+- **默认沟通模式**: 默认启用 `caveman` 技能并设为 `full` 强度。从首个回复起即使用 "caveman full" 风格进行简明沟通，除非显式收到 "stop caveman" 或 "normal mode" 指令。
 - **版本号更新规则**: 每个版本约束 21 个小版本，超出后更新次高版本（即第二位加 1，第三位重置为 1）。例如 `0.1.21` 下一个版本为 `0.2.1`，持续到 `0.2.21` 后更新到 `0.3.1`，以此类推。
 - **GitHub Operations**: When executing any operations or commands related to GitHub repositories, issues, PRs, or GitHub Actions, always use the GitHub CLI (`gh`) tool.
-- 在接收用户输入后的任务后，或者你认为重要的任务时，你都必须用中文简单总结一下原始意图，然后简单描述你的计划，然后再执行。
 
 ## 1. Read Before You Write
 The single biggest source of bad LLM code is not reaading the existing codebase before writing new code.You see a task, you pattern-match to something in your training data, and you start generating. ?This is almost always wrong

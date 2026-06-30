@@ -33,3 +33,4 @@ e2e/active_instances.json
 # Agent/AI assistant metadata (keep specs/ but ignore temporary logs/workspaces)
 .agents/
 .harnspec/
+.claude/
